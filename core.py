@@ -300,12 +300,27 @@ class _GroqClient:
 # ── Shared error handler ──────────────────────────────────────────────────────
 
 def _api_error(exc: Exception, name: str) -> str:
+    log.error("%s API error (%s): %s", name, type(exc).__name__, exc)
+
+    # Use SDK exception types first — avoids false positives from string matching
+    try:
+        from groq import AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError
+        if isinstance(exc, AuthenticationError):
+            return "There's a problem with my API credentials. Please check the GROQ_API_KEY."
+        if isinstance(exc, RateLimitError):
+            return "I'm being rate-limited right now. Please try again in a moment."
+        if isinstance(exc, APITimeoutError):
+            return "That request timed out. Could you try again?"
+        if isinstance(exc, APIConnectionError):
+            return "I can't reach the server right now. Check your internet connection."
+    except ImportError:
+        pass
+
     msg = str(exc).lower()
-    log.error("%s API error: %s", name, exc)
-    if "rate" in msg or "429" in msg or "quota" in msg or "limit" in msg:
+    if "429" in msg or "rate limit" in msg or "quota" in msg:
         return "I'm being rate-limited right now. Please try again in a moment."
-    if "auth" in msg or "401" in msg or "403" in msg or "api key" in msg or "invalid" in msg:
-        return "There's a problem with my API credentials. Please check the GROQ_API_KEY environment variable."
+    if "401" in msg or "403" in msg or "unauthorized" in msg:
+        return "There's a problem with my API credentials. Please check the GROQ_API_KEY."
     if "timeout" in msg or "timed out" in msg:
         return "That request timed out. Could you try again?"
     if "connect" in msg or "network" in msg or "unreachable" in msg:
