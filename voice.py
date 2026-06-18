@@ -551,6 +551,7 @@ class VoiceWorker(QThread):
 
         self._wake_word      = vc.get("wake_word", "atlas")
         self._muted          = False
+        self._tts_playing    = False   # True while ATLAS is speaking — gates mic input
         self._stop_event     = threading.Event()
         self._audio_q: queue.Queue[np.ndarray] = queue.Queue(maxsize=300)
         self._response_cb: Optional[Callable[[str], str]] = None
@@ -603,7 +604,7 @@ class VoiceWorker(QThread):
         def _audio_cb(indata, _frames, _time, status):
             if status:
                 log.debug("sounddevice status: %s", status)
-            if not self._muted:
+            if not self._muted and not self._tts_playing:
                 try:
                     self._audio_q.put_nowait(indata[:, 0].copy())
                 except queue.Full:
@@ -726,6 +727,7 @@ class VoiceWorker(QThread):
     def _tts_play(self, text: str):
         """Launch TTS in a daemon thread; streams amplitude back to the orb."""
         def _play():
+            self._tts_playing = True
             self.speaking_started.emit()
             try:
                 self.tts.speak(text, amplitude_cb=self.amplitude_changed.emit)
@@ -733,6 +735,9 @@ class VoiceWorker(QThread):
                 log.error("TTS error: %s", exc)
                 self.error_occurred.emit(f"TTS error: {exc}")
             finally:
+                # Short cooldown so room echo doesn't re-trigger the wake word
+                time.sleep(0.6)
+                self._tts_playing = False
                 self.speaking_done.emit()
 
         threading.Thread(target=_play, daemon=True, name="atlas-tts").start()
