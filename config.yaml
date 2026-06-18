@@ -23,8 +23,8 @@ ui:
 voice:
   wake_word: "atlas"
   whisper_model: "base"
-  piper_voice: "en_US-amy-medium"
-  tts_model: "en_US-amy-medium"      # legacy key; piper_voice takes precedence
+  piper_voice: "en_GB-alan-medium"
+  tts_model: "en_GB-alan-medium"     # legacy key; piper_voice takes precedence
   speech_rate: 1.0                   # 0.25–4.0; higher = faster
   voice_enabled: true                # false = text only, no audio output
   sample_rate: 16000

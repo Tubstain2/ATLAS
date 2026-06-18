@@ -62,12 +62,13 @@ _DEFAULT_VOICE = "en_US-amy-medium"
 
 _PIPER_HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 _VOICE_PATHS = {
+    "en_GB-alan-medium":   "en/en_GB/alan/medium",
     "en_US-amy-medium":    "en/en_US/amy/medium",
     "en_US-lessac-medium": "en/en_US/lessac/medium",
     "en_US-ryan-medium":   "en/en_US/ryan/medium",
     "en_US-kusal-medium":  "en/en_US/kusal/medium",
 }
-_AVAILABLE_VOICES = ["en_US-amy-medium", "en_US-lessac-medium", "en_US-ryan-medium"]
+_AVAILABLE_VOICES = ["en_GB-alan-medium", "en_US-amy-medium", "en_US-lessac-medium", "en_US-ryan-medium"]
 
 _WAKE_WORD_DIR  = Path.home() / ".atlas" / "wake_word"
 _KWS_MODEL_NAME = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
@@ -804,9 +805,10 @@ class VoiceModule:
     """
 
     def __init__(self, config: dict, window=None):
-        self._cfg    = config
-        self._window = window
+        self._cfg         = config
+        self._window      = window
         self._worker: Optional[VoiceWorker] = None
+        self._response_cb: Optional[Callable[[str], str]] = None  # stored until worker exists
 
     def start(self):
         if self._worker and self._worker.isRunning():
@@ -814,6 +816,8 @@ class VoiceModule:
 
         self._worker = VoiceWorker(self._cfg)
         self._wire_signals()
+        if self._response_cb:                                      # apply stored callback
+            self._worker.set_response_callback(self._response_cb)
         self._worker.start()
         log.info("VoiceModule started.")
 
@@ -829,6 +833,7 @@ class VoiceModule:
 
     def set_response_callback(self, cb: Callable[[str], str]):
         """Injected by core.py (Step 3) to replace the echo stub."""
+        self._response_cb = cb                                     # always store
         if self._worker:
             self._worker.set_response_callback(cb)
 
