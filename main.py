@@ -57,6 +57,9 @@ from core import ATLASCore
 from web import WebModule
 from control import ControlModule, ConfirmationDialog
 from self_editor import SelfEditor
+from claude_brain import ClaudeBrain
+from self_improve import SelfImproveEngine
+from widgets import DashboardWindow
 
 import yaml
 
@@ -125,13 +128,37 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     core.set_self_editor(editor)
     window.set_module_active("EDIT", True)
 
+    # Claude Brain — primary AI reasoning layer (wraps ATLASCore)
+    brain = ClaudeBrain(config)
+    brain.set_core(core)
+
+    # Self-improvement engine — wired into brain for voice commands
+    engine = SelfImproveEngine(config, brain, PROJECT_ROOT)
+    brain.set_self_improve(engine)
+
     # Voice pipeline
     vm = VoiceModule(config, window)
-    vm.set_response_callback(core.handle)   # replaces the echo stub
+    vm.set_response_callback(brain.handle)  # brain routes: Claude / MLX / Groq
 
     # Mute toggle from tray
     if hasattr(window, "_mute_act"):
         window._mute_act.triggered.connect(vm.set_muted)
+
+    # Dashboard widget panel
+    dash = DashboardWindow(config)
+    # Wire dashboard voice commands through brain's meta handler
+    _orig_meta = brain._handle_meta
+
+    def _meta_with_dash(text: str):
+        resp = dash.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta(text)
+
+    brain._handle_meta = _meta_with_dash
+
+    if config.get("dashboard", {}).get("visible_on_startup", True):
+        QTimer.singleShot(1200, dash.show)
 
     # Give the window 800 ms to finish painting before mic capture starts
     QTimer.singleShot(800, vm.start)
@@ -143,6 +170,9 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     window._confirm_dialog = confirm
     window._editor         = editor
     window._voice_module   = vm
+    window._brain          = brain
+    window._self_improve   = engine
+    window._dashboard      = dash
 
     # Graceful shutdown
     app = QApplication.instance()

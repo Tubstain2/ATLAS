@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────
 # ATLAS Requirements
-# Updated after: Piper TTS voice output
+# Updated after: Claude Brain + Self-Improve + Control rebuild + Widgets
 # Python 3.11+
 # ─────────────────────────────────────────────
 
@@ -38,6 +38,22 @@ pyautogui>=0.9.54           # mouse / keyboard control (needs Accessibility perm
 pygetwindow>=0.0.9          # window management
 pytesseract>=0.3.10         # OCR wrapper (needs: brew install tesseract on macOS)
 Pillow>=10.0.0              # screenshot capture
+
+# ── Module 1: Claude Brain ────────────────────
+anthropic>=0.111.0          # Claude Sonnet primary brain  (ANTHROPIC_API_KEY)
+
+# ── Module 2: Self-Improvement Engine ─────────
+# (uses anthropic + stdlib only)
+
+# ── Module 3: Control rebuild ─────────────────
+psutil>=5.9.0               # CPU / RAM / disk / battery stats
+
+# ── Module 4: Widget Dashboard ────────────────
+yfinance>=1.0.0             # stock price feed (free, no key)
+# Weather: Open-Meteo REST API via requests (already listed above)
+# Crypto:  CoinGecko REST API via requests (free, no key)
+# Quotes:  quotable.io REST API via requests (free, no key)
+# News:    DuckDuckGo via duckduckgo-search (already listed above)
 
 # ── Step 7: Packaging ─────────────────────────
 pyinstaller>=6.0.0          # build desktop app bundle (macOS .app / Windows .exe)
