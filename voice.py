@@ -643,7 +643,7 @@ class VoiceWorker(QThread):
                 amp = _rms_amplitude(chunk)
                 self.amplitude_changed.emit(amp)
 
-                if self._muted:
+                if self._muted or self._tts_playing:
                     continue
 
                 if not recording:
@@ -726,8 +726,13 @@ class VoiceWorker(QThread):
 
     def _tts_play(self, text: str):
         """Launch TTS in a daemon thread; streams amplitude back to the orb."""
+        if self._tts_playing:
+            log.debug("TTS already playing — skipping queued response")
+            return
+
+        self._tts_playing = True  # set synchronously before thread starts
+
         def _play():
-            self._tts_playing = True
             self.speaking_started.emit()
             try:
                 self.tts.speak(text, amplitude_cb=self.amplitude_changed.emit)
@@ -735,8 +740,14 @@ class VoiceWorker(QThread):
                 log.error("TTS error: %s", exc)
                 self.error_occurred.emit(f"TTS error: {exc}")
             finally:
-                # Short cooldown so room echo doesn't re-trigger the wake word
+                # Cooldown lets room echo die before mic re-opens
                 time.sleep(0.6)
+                # Drain any frames that snuck into the queue during playback
+                while not self._audio_q.empty():
+                    try:
+                        self._audio_q.get_nowait()
+                    except queue.Empty:
+                        break
                 self._tts_playing = False
                 self.speaking_done.emit()
 
@@ -844,21 +855,8 @@ class VoiceModule:
 
     def speak(self, text: str):
         """Direct TTS call from core agent (bypasses STT pipeline)."""
-        if not self._worker:
-            return
-
-        def _play():
-            self._worker.speaking_started.emit()
-            try:
-                self._worker.tts.speak(
-                    text, amplitude_cb=self._worker.amplitude_changed.emit
-                )
-            except Exception as exc:
-                log.error("TTS direct error: %s", exc)
-            finally:
-                self._worker.speaking_done.emit()
-
-        threading.Thread(target=_play, daemon=True, name="atlas-tts-direct").start()
+        if self._worker:
+            self._worker._tts_play(text)
 
     def set_voice_enabled(self, enabled: bool):
         if self._worker:
