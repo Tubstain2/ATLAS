@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import Optional
@@ -515,18 +516,24 @@ class ATLASCore:
 
     # ── Main call ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _now() -> str:
+        return datetime.now().strftime("%A %B %d %Y, %I:%M %p")
+
     def _call(self, text: str, web_context: str = "") -> str:
         if not self._groq.available:
             return self._no_backend()
 
+        time_prefix = f"Current date and time: {self._now()}\n\n"
+
         if web_context:
             augmented = f"{web_context}\n\nUser question: {self._history.last_user_text()}"
             return self._groq.ask(
-                [{"role": "user", "content": augmented}], _WEB_PROMPT
+                [{"role": "user", "content": augmented}], time_prefix + _WEB_PROMPT
             )
 
         system = _RESEARCH_PROMPT if self._router.is_research(text) else _VOICE_PROMPT
-        return self._groq.ask(self._history.messages(), system)
+        return self._groq.ask(self._history.messages(), time_prefix + system)
 
     @staticmethod
     def _no_backend() -> str:
