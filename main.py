@@ -14,6 +14,30 @@ import os
 import logging
 from pathlib import Path
 
+
+def _load_zshenv():
+    """Load exports from ~/.zshenv so GUI app launches have the same env as the shell."""
+    zshenv = Path.home() / ".zshenv"
+    if not zshenv.exists():
+        return
+    try:
+        for line in zshenv.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("export "):
+                line = line[7:]
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+_load_zshenv()
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault("ATLAS_ROOT", str(PROJECT_ROOT))
