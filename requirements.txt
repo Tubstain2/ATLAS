@@ -24,7 +24,8 @@ piper-tts>=1.2.0            # requires onnxruntime
 pyttsx3>=2.90               # fallback: uses macOS/Windows system TTS
 
 # ── Step 3: Core agent ────────────────────────
-groq>=0.5.0                     # Groq Llama 3 70B  (GROQ_API_KEY)
+mlx-lm>=0.21.0                  # primary: local Apple Silicon inference (no API key)
+groq>=0.5.0                     # fallback: Groq Llama 3 70B  (GROQ_API_KEY)
 
 # ── Step 4: Web ───────────────────────────────
 duckduckgo-search>=6.0.0    # no API key required (being renamed to ddgs)

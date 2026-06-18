@@ -297,6 +297,73 @@ class _GroqClient:
                 return _api_error(exc, "Groq")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MLX client (Apple Silicon local inference — primary)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _MLXClient:
+    """Local inference via mlx-lm on Apple Silicon. No API key needed."""
+
+    def __init__(self, model_id: str, max_tokens: int, temperature: float):
+        self._model_id    = model_id
+        self._max_tokens  = max_tokens
+        self._temperature = temperature
+        self._model       = None
+        self._tokenizer   = None
+        self._lock        = Lock()
+        self._load_failed = False
+
+        try:
+            import mlx_lm  # noqa: F401 — availability probe only
+            self._importable = True
+            log.info("MLX available — will load %s on first inference", model_id)
+        except ImportError:
+            self._importable = False
+            log.info("mlx-lm not installed — MLX disabled (using Groq fallback).")
+
+    @property
+    def available(self) -> bool:
+        return self._importable and not self._load_failed
+
+    def _ensure_loaded(self):
+        if self._model is not None:
+            return
+        log.info("Loading MLX model %s (first run downloads ~2 GB)...", self._model_id)
+        from mlx_lm import load
+        self._model, self._tokenizer = load(self._model_id)
+        log.info("MLX model ready.")
+
+    def ask(self, messages: list[dict], system_prompt: str,
+            max_tokens: Optional[int] = None) -> str:
+        if not self.available:
+            return ""
+        limit = max_tokens or self._max_tokens
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        with self._lock:
+            try:
+                self._ensure_loaded()
+                from mlx_lm import generate
+                from mlx_lm.sample_utils import make_sampler
+                prompt = self._tokenizer.apply_chat_template(
+                    full_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                response = generate(
+                    self._model,
+                    self._tokenizer,
+                    prompt=prompt,
+                    max_tokens=limit,
+                    sampler=make_sampler(temp=self._temperature),
+                    verbose=False,
+                )
+                return response.strip()
+            except Exception as exc:
+                log.error("MLX inference error (%s): %s — falling back to Groq.", type(exc).__name__, exc)
+                self._load_failed = True
+                return ""
+
+
 # ── Shared error handler ──────────────────────────────────────────────────────
 
 def _api_error(exc: Exception, name: str) -> str:
@@ -344,23 +411,27 @@ class ATLASCore:
         cc = config.get("core", {})
         ac = config.get("api",  {})
 
-        groq_model  = ac.get("groq_model",       "llama3-70b-8192")
+        groq_model  = ac.get("groq_model",       "llama-3.3-70b-versatile")
+        mlx_model   = ac.get("mlx_model",        "mlx-community/Llama-3.2-3B-Instruct-4bit")
         max_turns   = cc.get("max_history_turns", 12)
-        groq_tok    = cc.get("groq_max_tokens",   450)
+        max_tokens  = cc.get("groq_max_tokens",   450)
         temp        = cc.get("temperature",        0.7)
 
         self._router  = _Router()
         self._history = _History(max_turns=max_turns)
-        self._groq    = _GroqClient(groq_model, groq_tok, temp)
+        self._mlx     = _MLXClient(mlx_model,  max_tokens, temp)
+        self._groq    = _GroqClient(groq_model, max_tokens, temp)
 
         self._web:     Optional[object] = None
         self._control: Optional[object] = None
         self._editor:  Optional[object] = None
 
-        if not self._groq.available:
-            log.error("No AI backend available. Set GROQ_API_KEY.")
+        if self._mlx.available:
+            log.info("ATLASCore ready — primary: MLX (%s), fallback: Groq (%s)", mlx_model, groq_model)
+        elif self._groq.available:
+            log.info("ATLASCore ready — backend: Groq (%s)  [MLX unavailable]", groq_model)
         else:
-            log.info("ATLASCore ready — backend: Groq (%s)", groq_model)
+            log.error("No AI backend available. Install mlx-lm or set GROQ_API_KEY.")
 
     # ── Module injection ──────────────────────────────────────────────────────
 
@@ -408,7 +479,8 @@ class ATLASCore:
 
         self._history.add("user", text)
 
-        log.info("[GROQ%s] %r", "+WEB" if web_context else "", text[:80])
+        backend = "MLX" if self._mlx.available else "GROQ"
+        log.info("[%s%s] %r", backend, "+WEB" if web_context else "", text[:80])
         response = self._call(text, web_context)
 
         if response:
@@ -423,10 +495,8 @@ class ATLASCore:
         text = text.strip()
         if not text:
             return ""
-        if not self._groq.available:
-            return self._no_backend()
-        log.info("[GROQ/ask] %r", text[:80])
-        return self._groq.ask([{"role": "user", "content": text}], _RESEARCH_PROMPT)
+        log.info("[AI/ask] %r", text[:80])
+        return self._ask([{"role": "user", "content": text}], _RESEARCH_PROMPT)
 
     # ── History control ───────────────────────────────────────────────────────
 
@@ -437,8 +507,16 @@ class ATLASCore:
     # ── Properties ────────────────────────────────────────────────────────────
 
     @property
+    def mlx_available(self) -> bool:
+        return self._mlx.available
+
+    @property
     def groq_available(self) -> bool:
         return self._groq.available
+
+    @property
+    def ai_available(self) -> bool:
+        return self._mlx.available or self._groq.available
 
     # ── Self-edit routing ─────────────────────────────────────────────────────
 
@@ -531,29 +609,40 @@ class ATLASCore:
 
     # ── Main call ─────────────────────────────────────────────────────────────
 
+    def _ask(self, messages: list[dict], system_prompt: str,
+             max_tokens: Optional[int] = None) -> str:
+        """Try MLX first; fall back to Groq on failure or unavailability."""
+        if self._mlx.available:
+            result = self._mlx.ask(messages, system_prompt, max_tokens)
+            if result:
+                return result
+        if self._groq.available:
+            return self._groq.ask(messages, system_prompt, max_tokens)
+        return self._no_backend()
+
     @staticmethod
     def _now() -> str:
         return datetime.now().strftime("%A %B %d %Y, %I:%M %p")
 
     def _call(self, text: str, web_context: str = "") -> str:
-        if not self._groq.available:
+        if not self._mlx.available and not self._groq.available:
             return self._no_backend()
 
         time_prefix = f"Current date and time: {self._now()}\n\n"
 
         if web_context:
             augmented = f"{web_context}\n\nUser question: {self._history.last_user_text()}"
-            return self._groq.ask(
+            return self._ask(
                 [{"role": "user", "content": augmented}], time_prefix + _WEB_PROMPT
             )
 
         system = _RESEARCH_PROMPT if self._router.is_research(text) else _VOICE_PROMPT
-        return self._groq.ask(self._history.messages(), time_prefix + system)
+        return self._ask(self._history.messages(), time_prefix + system)
 
     @staticmethod
     def _no_backend() -> str:
         log.error("No AI backend available.")
         return (
             "I'm not connected to any AI backend. "
-            "Please set GROQ_API_KEY and restart ATLAS."
+            "Install mlx-lm for local inference, or set GROQ_API_KEY for cloud fallback."
         )
