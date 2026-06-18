@@ -334,8 +334,14 @@ class WhisperSTT:
         if self._model is not None:
             return
         log.info("Loading Whisper '%s' model …", self._model_name)
-        import whisper
-        self._model = whisper.load_model(self._model_name)
+        import ssl, whisper
+        # macOS Python.org builds often lack system certs; patch for download only
+        _orig = ssl._create_default_https_context
+        ssl._create_default_https_context = ssl._create_unverified_context
+        try:
+            self._model = whisper.load_model(self._model_name)
+        finally:
+            ssl._create_default_https_context = _orig
         log.info("Whisper ready.")
 
     def transcribe(self, audio_f32: np.ndarray) -> str:
@@ -406,16 +412,20 @@ class PiperTTS:
             return False
 
     def _download_voice(self, model_path: Path, config_path: Path):
-        import urllib.request
+        import ssl, urllib.request
         _VOICES_DIR.mkdir(parents=True, exist_ok=True)
 
         voice_subpath = _VOICE_PATHS.get(self._voice, "en/en_US/amy/medium")
         base_url = f"{_PIPER_HF_BASE}/{voice_subpath}"
 
+        ctx = ssl._create_unverified_context()
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+
         for suffix, dest in [(".onnx", model_path), (".onnx.json", config_path)]:
             url = f"{base_url}/{self._voice}{suffix}"
             log.info("Downloading %s …", url)
-            urllib.request.urlretrieve(url, dest)
+            with opener.open(url) as resp, open(dest, "wb") as fh:
+                fh.write(resp.read())
 
         log.info("Voice model saved to %s", _VOICES_DIR)
 
@@ -452,9 +462,11 @@ class PiperTTS:
 
     def _speak_piper(self, text: str, amplitude_cb=None):
         import sounddevice as sd
+        from piper.config import SynthesisConfig
 
         length_scale = 1.0 / max(0.25, self._speech_rate)
-        chunks = list(self._piper.synthesize(text, length_scale=length_scale))
+        syn_cfg = SynthesisConfig(length_scale=length_scale)
+        chunks = list(self._piper.synthesize(text, syn_config=syn_cfg))
         if not chunks:
             return
 
@@ -596,17 +608,18 @@ class VoiceWorker(QThread):
                 except queue.Full:
                     pass   # drop frame rather than block the audio thread
 
-        stream = sd.InputStream(
-            samplerate=self._sr,
-            channels=CHANNELS,
-            dtype=DTYPE,
-            blocksize=frame_len,
-            callback=_audio_cb,
-        )
+        def _make_stream():
+            return sd.InputStream(
+                samplerate=self._sr,
+                channels=CHANNELS,
+                dtype=DTYPE,
+                blocksize=frame_len,
+                callback=_audio_cb,
+            )
 
         # Measure ambient noise before the main loop
         self.status_message.emit("CALIBRATING MIC...")
-        with stream:
+        with _make_stream():
             silence_threshold = self._calibrate_silence_threshold()
 
         log.info("Voice pipeline running (frame=%d, sr=%d)", frame_len, self._sr)
@@ -617,7 +630,7 @@ class VoiceWorker(QThread):
         rec_start    = 0.0
         recording    = False
 
-        with stream:
+        with _make_stream():
             while not self._stop_event.is_set():
                 try:
                     chunk = self._audio_q.get(timeout=0.15)
@@ -682,10 +695,12 @@ class VoiceWorker(QThread):
         except Exception as exc:
             log.error("STT error: %s", exc)
             self.error_occurred.emit(f"STT error: {exc}")
+            self.speaking_done.emit()   # reset orb to idle
             return
 
         if not text:
             log.debug("Empty transcription — ignoring")
+            self.speaking_done.emit()   # reset orb to idle
             return
 
         log.info("Transcribed: %r", text)
