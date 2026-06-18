@@ -1,7 +1,7 @@
 """
 ATLAS Self-Improvement Engine — Module 2
 
-Analyses ATLAS source code using Claude and applies surgical improvements
+Analyses ATLAS source code using OpenRouter and applies surgical improvements
 after explicit user voice or text confirmation.
 
 Every change is:
@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 # Source files ATLAS manages — ordered by criticality (most important last)
 _ATLAS_MODULES = [
     "web.py", "control.py", "self_editor.py",
-    "self_improve.py", "claude_brain.py", "core.py", "voice.py", "main.py",
+    "self_improve.py", "brain.py", "core.py", "voice.py", "main.py",
 ]
 
 _MAX_FILE_CHARS = 8_000   # truncate large files sent to Claude
@@ -114,9 +114,9 @@ class SelfImproveEngine:
         Read all ATLAS source files, ask Claude to identify the single most
         impactful improvement, and store it as a pending proposal.
         """
-        if not self._brain.claude_available:
-            return ("I need Claude to analyse my code, but ANTHROPIC_API_KEY isn't set. "
-                    "Please add it and try again.")
+        if not self._brain.openrouter_available:
+            return ("I need OpenRouter to analyse my code, but OPENROUTER_API_KEY isn't set. "
+                    "Please add it to ~/.zshenv and restart ATLAS.")
 
         log.info("[SELF-IMPROVE] Starting code analysis...")
 

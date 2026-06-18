@@ -57,7 +57,7 @@ from core import ATLASCore
 from web import WebModule
 from control import ControlModule, ConfirmationDialog
 from self_editor import SelfEditor
-from claude_brain import ClaudeBrain
+from brain import Brain
 from self_improve import SelfImproveEngine
 from widgets import DashboardWindow
 
@@ -128,8 +128,8 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     core.set_self_editor(editor)
     window.set_module_active("EDIT", True)
 
-    # Claude Brain — primary AI reasoning layer (wraps ATLASCore)
-    brain = ClaudeBrain(config)
+    # Brain — primary AI reasoning layer via OpenRouter (wraps ATLASCore)
+    brain = Brain(config)
     brain.set_core(core)
 
     # Self-improvement engine — wired into brain for voice commands

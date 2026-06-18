@@ -39,8 +39,8 @@ pygetwindow>=0.0.9          # window management
 pytesseract>=0.3.10         # OCR wrapper (needs: brew install tesseract on macOS)
 Pillow>=10.0.0              # screenshot capture
 
-# ── Module 1: Claude Brain ────────────────────
-anthropic>=0.111.0          # Claude Sonnet primary brain  (ANTHROPIC_API_KEY)
+# ── Module 1: Brain (OpenRouter) ──────────────
+openai>=1.0.0               # OpenRouter deep reasoning brain  (OPENROUTER_API_KEY, free tier available)
 
 # ── Module 2: Self-Improvement Engine ─────────
 # (uses anthropic + stdlib only)
