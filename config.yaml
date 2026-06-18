@@ -1,0 +1,62 @@
+app:
+  name: ATLAS
+  version: "0.1.0"
+  window:
+    width: 1280
+    height: 860
+    fullscreen: false
+    always_on_top: false
+
+ui:
+  theme: dark
+  background_color: "#050510"
+  accent_color_idle: "#0055FF"
+  accent_color_listening: "#0088FF"
+  accent_color_responding: "#00EEFF"
+  accent_color_thinking: "#8844FF"
+  font_family: "Share Tech Mono"
+  font_size: 14
+  orb_radius: 170
+  particle_count: 80
+  fps: 60
+
+voice:
+  wake_word: "atlas"
+  whisper_model: "base"
+  piper_voice: "en_US-amy-medium"
+  tts_model: "en_US-amy-medium"      # legacy key; piper_voice takes precedence
+  speech_rate: 1.0                   # 0.25–4.0; higher = faster
+  voice_enabled: true                # false = text only, no audio output
+  sample_rate: 16000
+  chunk_size: 1024
+  amplitude_smoothing: 0.12
+
+api:
+  groq_model: "llama3-70b-8192"
+
+core:
+  max_history_turns: 12        # number of user+assistant turn pairs kept in context
+  groq_max_tokens: 450         # short voice responses
+  temperature: 0.7
+  response_timeout: 20         # seconds before giving up on an API call
+
+web:
+  max_results: 5             # search results per query
+  max_page_chars: 5000       # characters extracted from top result page
+  enable_fetch: true         # set false to disable deep URL fetching
+
+safety:
+  confirm_destructive_commands: true
+  confirm_file_access_outside_project: true
+  confirm_core_modifications: true
+  restricted_commands:
+    - "rm -rf"
+    - "format"
+    - "del /f"
+    - "mkfs"
+    - "dd if="
+
+self_editor:
+  changelog_path: "changelog.json"
+  backup_dir: ".atlas_backups"
+  max_backups: 50

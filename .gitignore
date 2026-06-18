@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.spec
+.DS_Store
+*.egg-info/
+.env
+*.log
+changelog.json
+.atlas_backups/

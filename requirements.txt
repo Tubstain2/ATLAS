@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────
+# ATLAS Requirements
+# Updated after: Piper TTS voice output
+# Python 3.11+
+# ─────────────────────────────────────────────
+
+# ── Step 1: UI ────────────────────────────────
+PyQt6>=6.6.0
+PyYAML>=6.0.1
+
+# ── Step 2: Voice ─────────────────────────────
+# Audio capture & playback
+sounddevice>=0.4.6          # requires portaudio (brew install portaudio on macOS)
+numpy>=1.24.0
+
+# Wake word (offline, no API key required)
+sherpa-onnx>=1.9.0          # keyword spotter — model auto-downloaded to ~/.atlas/wake_word/
+
+# Speech-to-text (local, ~140 MB model download on first run)
+openai-whisper>=20231117    # also installs torch
+
+# Text-to-speech (local, ~60 MB model auto-downloaded to ~/.atlas/voices/)
+piper-tts>=1.2.0            # requires onnxruntime
+pyttsx3>=2.90               # fallback: uses macOS/Windows system TTS
+
+# ── Step 3: Core agent ────────────────────────
+groq>=0.5.0                     # Groq Llama 3 70B  (GROQ_API_KEY)
+
+# ── Step 4: Web ───────────────────────────────
+duckduckgo-search>=6.0.0    # no API key required (being renamed to ddgs)
+beautifulsoup4>=4.12.0      # HTML extraction
+requests>=2.31.0            # HTTP client
+lxml>=5.0.0                 # fast HTML parser backend
+
+# ── Step 5: Control ───────────────────────────
+pyautogui>=0.9.54           # mouse / keyboard control (needs Accessibility permission on macOS)
+pygetwindow>=0.0.9          # window management
+pytesseract>=0.3.10         # OCR wrapper (needs: brew install tesseract on macOS)
+Pillow>=10.0.0              # screenshot capture
+
+# ── Step 7: Packaging ─────────────────────────
+pyinstaller>=6.0.0          # build desktop app bundle (macOS .app / Windows .exe)
