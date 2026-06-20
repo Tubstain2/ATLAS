@@ -19,7 +19,7 @@ import yaml
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSystemTrayIcon, QMenu, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -31,6 +31,8 @@ from PyQt6.QtGui import (
 from .orb_widget import OrbWidget
 from .hud_widget import HUDWidget
 from .transcript_widget import TranscriptWidget
+from .feed_panel import FeedPanel
+from .image_panel import ImagePanel
 
 
 def _load_config() -> dict:
@@ -115,9 +117,18 @@ class ATLASMainWindow(QMainWindow):
         root.setObjectName("root")
         root.setStyleSheet("QWidget#root { background: #050510; }")
 
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # Outer horizontal layout: orb area (left) + feed panel (right)
+        h_layout = QHBoxLayout(root)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(0)
+
+        # Left area: orb + transcript (unchanged)
+        self._left_area = QWidget()
+        self._left_area.setObjectName("left_area")
+        self._left_area.setStyleSheet("QWidget#left_area { background: #050510; }")
+        v_layout = QVBoxLayout(self._left_area)
+        v_layout.setContentsMargins(0, 0, 0, 0)
+        v_layout.setSpacing(0)
 
         orb_r = self._cfg.get("ui", {}).get("orb_radius", 170)
         self.orb = OrbWidget(orb_radius=orb_r)
@@ -126,20 +137,29 @@ class ATLASMainWindow(QMainWindow):
         self.transcript = TranscriptWidget()
         self.transcript.setFixedHeight(195)
 
-        layout.addWidget(self.orb,        stretch=7)
-        layout.addWidget(self.transcript, stretch=0)
+        v_layout.addWidget(self.orb,        stretch=7)
+        v_layout.addWidget(self.transcript, stretch=0)
+
+        # Right area: feed panel (starts hidden at 0px)
+        self.feed_panel = FeedPanel()
+
+        h_layout.addWidget(self._left_area, stretch=1)
+        h_layout.addWidget(self.feed_panel, stretch=0)
 
         self.setCentralWidget(root)
 
-        # HUD floats on top (transparent, mouse-pass-through)
-        self.hud = HUDWidget(parent=root)
+        # HUD floats over the left area only (transparent, mouse-pass-through)
+        self.hud = HUDWidget(parent=self._left_area)
         self.hud.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        # Image panel floats centered over left area; hidden until generation completes
+        self.image_panel = ImagePanel(parent=self._left_area)
+
         QTimer.singleShot(80, self._reposition_hud)
 
     def _reposition_hud(self):
-        base = self.centralWidget()
-        if base and self.hud:
-            self.hud.setGeometry(base.rect())
+        if self.hud and self._left_area:
+            self.hud.setGeometry(self._left_area.rect())
             self.hud.raise_()
 
     def resizeEvent(self, ev):
@@ -248,3 +268,17 @@ class ATLASMainWindow(QMainWindow):
 
     def set_module_active(self, module: str, active: bool):
         self.hud.set_module_active(module, active)
+
+    # ── Feed panel public API ─────────────────────────────────────────────────
+
+    def toggle_feed(self):
+        self.feed_panel.toggle()
+
+    def show_feed(self):
+        self.feed_panel.slide_in()
+
+    def hide_feed(self):
+        self.feed_panel.slide_out()
+
+    def add_feed_item(self, category: str, content: str):
+        self.feed_panel.add_feed_item(category, content)

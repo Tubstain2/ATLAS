@@ -848,7 +848,7 @@ class ShellExecutor:
             )
             output = (result.stdout + result.stderr).strip()
             if not output:
-                output = f"Done (exit code {result.returncode})."
+                output = "" if result.returncode == 0 else f"Command failed (exit {result.returncode})."
             elif len(output) > _MAX_OUTPUT_CHARS:
                 output = output[:_MAX_OUTPUT_CHARS] + "\n[…output truncated…]"
             log.info("Shell: %r → exit %d", cmd[:60], result.returncode)
@@ -925,29 +925,46 @@ class ControlModule:
 
     # Phrases that signal control intent
     _TRIGGERS = frozenset({
+        # App management
         "open ", "launch ", "start ", "close ", "quit ",
         "switch to ", "focus ", "bring up ", "minimize ", "minimise ",
-        "maximize ", "maximise ", "hide ",
+        "maximize ", "maximise ", "hide ", "show ",
+        # Mouse / keyboard
         "click ", "double click ", "right click ",
         "scroll up", "scroll down",
         "drag ", "move mouse", "move the mouse",
         "type ", "press ", "hold down",
+        "paste ", "copy that", "select all",
+        # Screen
         "screenshot", "take a screenshot", "capture the screen",
         "read the screen", "what's on the screen", "read what's on",
         "what does the screen say", "what is on the screen",
-        "volume up", "volume down", "volume set", "mute", "unmute",
-        "set volume", "turn up the volume", "turn down the volume",
-        "brightness up", "brightness down",
+        # Media / apps (the user says "play X on Spotify" etc.)
+        "play ", "pause", "resume", "stop playing", "skip", "next song",
+        "next track", "previous song", "previous track",
+        "put on ", "turn on ", "stream ", "watch ",
+        "spotify", "youtube", "netflix", "music", "podcast",
+        # Volume / audio
+        "volume", "louder", "quieter", "softer",
+        "mute", "unmute", "turn up", "turn down",
+        # Display
+        "brightness", "brighter", "dimmer",
+        # System info
         "battery", "battery level", "how much battery",
         "system stats", "cpu usage", "ram usage", "disk space",
+        # Power
         "lock screen", "lock my screen", "sleep mac", "go to sleep",
+        # Files
         "open downloads", "open desktop", "open documents",
         "find file", "create folder", "move to trash", "trash this",
+        # Browser
         "new tab", "close tab", "go back", "go forward", "reload",
-        "search for", "open youtube", "open google",
+        "open youtube", "open google",
+        # Shell
         "run command", "execute command", "open terminal",
-        "paste ", "copy that", "select all",
+        # Window listing
         "list open apps", "what apps are open", "what windows are open",
+        # Permissions
         "check permissions", "do you have accessibility",
     })
 
@@ -992,9 +1009,14 @@ class ControlModule:
             log.error("Control dispatch error: %s", exc)
             actual = f"Control error: {exc}"
 
-        if kind in ("run_command", "read_screen", "list_windows",
-                    "system_stats", "battery", "find_file"):
+        if kind in ("read_screen", "list_windows", "system_stats", "battery", "find_file"):
             return f"{llm_response}\n{actual}".strip() if llm_response else actual
+
+        if kind == "run_command":
+            # Only append shell output when it's meaningful (errors, query results)
+            if actual:
+                return f"{llm_response}\n{actual}".strip() if llm_response else actual
+            return llm_response or "Done."
 
         return llm_response or actual
 

@@ -39,8 +39,30 @@ pygetwindow>=0.0.9          # window management
 pytesseract>=0.3.10         # OCR wrapper (needs: brew install tesseract on macOS)
 Pillow>=10.0.0              # screenshot capture
 
-# ── Module 1: Brain (OpenRouter) ──────────────
-openai>=1.0.0               # OpenRouter deep reasoning brain  (OPENROUTER_API_KEY, free tier available)
+# ── Module 1: Brain (Gemini + Groq) ───────────
+openai>=1.0.0               # Gemini 2.0 Flash via OpenAI-compatible endpoint (GEMINI_API_KEY)
+
+# ── Feed Panel (TARS-style side panel) ────────
+PyQt6-WebEngine>=6.6.0      # QWebEngineView for feed.html rendering
+
+# ── Context Manager (active window detection) ──
+# Uses AppleScript via subprocess — no extra packages needed on macOS
+# pyobjc-framework-AppKit>=9.0  # optional: faster native NSWorkspace access
+
+# ── Shazam Module (song identification) ────────
+shazamio==0.4.0.1           # Shazam audio fingerprinting (pinned; 0.8+ crashes on Python 3.14)
+audioop-lts>=0.2.1          # audioop backport for Python 3.13+
+aiohttp>=3.9.0              # async HTTP for ShazamIO
+
+# ── Obsidian Integration Module ───────────────────
+# All file I/O via pathlib and stdlib — no extra packages required
+
+# ── Image Generation Module ─────────────────────
+diffusers>=0.38.0           # Stable Diffusion pipeline (runwayml/stable-diffusion-v1-5)
+accelerate>=0.20.0          # speeds up model loading + MPS optimizations
+# torch is already installed via openai-whisper above
+# Pillow is already installed via the control module above
+# Model download (~4 GB) is user-triggered; never downloaded automatically
 
 # ── Module 2: Self-Improvement Engine ─────────
 # (uses anthropic + stdlib only)
@@ -57,3 +79,14 @@ yfinance>=1.0.0             # stock price feed (free, no key)
 
 # ── Step 7: Packaging ─────────────────────────
 pyinstaller>=6.0.0          # build desktop app bundle (macOS .app / Windows .exe)
+
+# ── JARVIS Upgrade: Voice + VAD + Vision + Overlay + Ambient + Sounds ─────
+webrtcvad>=2.0.10           # WebRTC VAD — <50 ms speech-end detection
+scipy>=1.11.0               # sound synthesis (Iron Man sounds, numpy sine waves)
+# numpy already listed above via openai-whisper
+# pyobjc — required for ScreenCaptureKit capture and NSWindow overlay (macOS only)
+pyobjc-core>=10.0                    # Python ↔ Objective-C bridge
+pyobjc-framework-Cocoa>=10.0         # NSWindow, NSApplication (cursor overlay)
+pyobjc-framework-Quartz>=10.0        # ScreenCaptureKit screen capture
+pyobjc-framework-AppKit>=10.0        # NSWorkspace, menu bar (ambient mode)
+pynput>=1.7.6                        # global hotkey (push-to-talk cmd+space)

@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ATLAS Feed</title>
+<style>
+/* ── Reset & variables ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #030310;
+  --card:    #080820;
+  --border:  rgba(0, 85, 255, 0.30);
+  --glow:    #0066ee;
+  --cyan:    #00eeff;
+  --blue:    #4488ff;
+  --text:    #c8d8ff;
+  --dim:     #334466;
+  --gold:    #ffcc44;
+  --green:   #44ff88;
+  --red:     #ff4455;
+  --orange:  #ff8844;
+  --font:    'Share Tech Mono', 'Courier New', monospace;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+/* ── Scanline overlay ──────────────────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px, transparent 3px,
+    rgba(0, 80, 200, 0.025) 3px, rgba(0, 80, 200, 0.025) 4px
+  );
+}
+
+/* ── Left glow border (divider between orb and feed) ──────────────────────── */
+body::before {
+  content: '';
+  position: fixed; left: 0; top: 0; bottom: 0; width: 1px; z-index: 100;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--glow)  25%,
+    var(--cyan)  50%,
+    var(--glow)  75%,
+    transparent 100%
+  );
+  box-shadow: 0 0 6px var(--glow), 0 0 18px rgba(0, 100, 238, 0.4);
+  animation: borderPulse 4s ease-in-out infinite;
+}
+
+@keyframes borderPulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1.0; }
+}
+
+/* ── Panel layout ──────────────────────────────────────────────────────────── */
+#panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-left: 10px;
+}
+
+/* ── ATLAS header ──────────────────────────────────────────────────────────── */
+#panel-header {
+  flex-shrink: 0;
+  padding: 10px 10px 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+#panel-title {
+  font-size: 9px;
+  letter-spacing: 4px;
+  color: var(--cyan);
+  text-shadow: 0 0 8px rgba(0,238,255,0.5);
+  text-transform: uppercase;
+}
+
+#panel-status {
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+/* ── Pinned widgets ────────────────────────────────────────────────────────── */
+#pinned {
+  flex-shrink: 0;
+  padding: 6px 10px 4px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  max-height: 62vh;
+  scrollbar-width: none;
+}
+#pinned::-webkit-scrollbar { display: none; }
+
+/* ── Card base ─────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 9px;
+  position: relative;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+/* Top edge shimmer */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glow), transparent);
+  opacity: 0.5;
+}
+
+.card.hidden { display: none !important; }
+
+.card-title {
+  font-size: 7px;
+  color: var(--dim);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+/* ── Widget 1: Clock ───────────────────────────────────────────────────────── */
+#clock-widget {
+  background: linear-gradient(135deg, #080820, #0a0a28);
+}
+
+#clock-time {
+  font-size: 30px;
+  color: var(--cyan);
+  letter-spacing: 3px;
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(0,238,255,0.55), 0 0 28px rgba(0,238,255,0.2);
+}
+
+#clock-date {
+  font-size: 10px;
+  color: var(--text);
+  margin-top: 3px;
+  letter-spacing: 1px;
+}
+
+/* ── Widget 2: Weather ─────────────────────────────────────────────────────── */
+#wx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#wx-icon { font-size: 26px; line-height: 1; }
+
+#wx-temp {
+  font-size: 26px;
+  color: #88ccff;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(136,204,255,0.4);
+}
+
+#wx-right { display: flex; flex-direction: column; gap: 2px; }
+
+#wx-cond   { font-size: 11px; color: var(--text); }
+#wx-detail { font-size: 9px;  color: var(--dim);  }
+
+#wx-forecast {
+  font-size: 9px; color: var(--dim);
+  margin-top: 5px; padding-top: 4px;
+  border-top: 1px solid rgba(51,68,102,0.5);
+}
+
+/* ── Widget 3: Now Playing ─────────────────────────────────────────────────── */
+#sp-track {
+  font-size: 11px;
+  color: var(--gold);
+  text-shadow: 0 0 8px rgba(255,204,68,0.4);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+#sp-artist  { font-size: 9px; color: var(--dim); margin-top: 2px; }
+#sp-idle    { font-size: 9px; color: var(--dim); }
+
+.waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  margin-top: 5px;
+}
+
+.wave-bar {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--gold);
+  animation: wave 1s ease-in-out infinite;
+}
+.wave-bar:nth-child(1) { height: 4px;  animation-delay: 0.00s; }
+.wave-bar:nth-child(2) { height: 8px;  animation-delay: 0.10s; }
+.wave-bar:nth-child(3) { height: 12px; animation-delay: 0.20s; }
+.wave-bar:nth-child(4) { height: 6px;  animation-delay: 0.30s; }
+.wave-bar:nth-child(5) { height: 10px; animation-delay: 0.15s; }
+.wave-bar:nth-child(6) { height: 14px; animation-delay: 0.25s; }
+.wave-bar:nth-child(7) { height: 7px;  animation-delay: 0.35s; }
+.wave-bar:nth-child(8) { height: 5px;  animation-delay: 0.05s; }
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.3); opacity: 0.4; }
+  50%       { transform: scaleY(1.0); opacity: 1.0; }
+}
+
+/* ── Widget 4: System Stats ────────────────────────────────────────────────── */
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.stat-row:last-child { margin-bottom: 0; }
+
+.stat-label {
+  font-size: 8px; color: var(--dim);
+  width: 34px; flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.bar-track {
+  flex: 1; height: 4px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px; overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%; border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.bar-fill.cpu  { background: linear-gradient(90deg, #0055ff, #00eeff); }
+.bar-fill.ram  { background: linear-gradient(90deg, #4400cc, #8844ff); }
+.bar-fill.batt { background: linear-gradient(90deg, #006622, #44ff88); }
+.bar-fill.net  { background: linear-gradient(90deg, #884400, #ffaa22); }
+
+.stat-value {
+  font-size: 8px; color: var(--text);
+  width: 36px; text-align: right; flex-shrink: 0;
+}
+
+/* ── Widget 5: Active Context ──────────────────────────────────────────────── */
+#ctx-app    { font-size: 13px; color: var(--cyan); }
+#ctx-detail { font-size: 9px;  color: var(--dim);  margin-top: 2px; }
+
+/* ── Widget 6: Reminders ───────────────────────────────────────────────────── */
+.reminder-item {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 3px 0; font-size: 10px;
+  border-bottom: 1px solid rgba(51,68,102,0.25);
+}
+.reminder-item:last-child { border-bottom: none; }
+.reminder-dot { color: var(--orange); font-size: 9px; margin-top: 1px; flex-shrink: 0; }
+.reminder-text { color: var(--text); }
+#reminders-empty { font-size: 9px; color: var(--dim); }
+
+/* ── Widget 7: Obsidian Vault ──────────────────────────────────────────────── */
+#obsidian-widget { border-color: rgba(120, 80, 255, 0.35); }
+#obsidian-widget::before {
+  background: linear-gradient(90deg, transparent, rgba(120,80,255,0.6), transparent);
+}
+
+#obs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+#obs-tasks {
+  font-size: 22px;
+  color: #aa88ff;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(160,100,255,0.45);
+}
+
+#obs-tasks-label {
+  font-size: 8px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 1px;
+}
+
+#obs-daily-badge {
+  font-size: 8px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(120,80,255,0.4);
+  color: #aa88ff;
+}
+
+#obs-urgent {
+  font-size: 9px;
+  color: var(--orange);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+#obs-urgent:empty { display: none; }
+
+#obs-recent { display: flex; flex-direction: column; gap: 2px; }
+.obs-note {
+  font-size: 9px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.obs-note::before { content: "◦ "; color: rgba(120,80,255,0.6); }
+
+#obs-vault-name {
+  font-size: 8px; color: rgba(120,80,255,0.5);
+  margin-top: 4px; text-align: right;
+}
+#obs-inactive { font-size: 9px; color: var(--dim); }
+
+/* ── Feed section ──────────────────────────────────────────────────────────── */
+#feed-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid rgba(51,68,102,0.4);
+  margin-top: 4px;
+}
+
+#feed-header {
+  font-size: 7px; color: var(--dim);
+  letter-spacing: 3px; text-transform: uppercase;
+  padding: 5px 10px 4px 12px;
+  flex-shrink: 0;
+}
+
+#feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 8px 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,85,255,0.4) transparent;
+}
+#feed::-webkit-scrollbar       { width: 3px; }
+#feed::-webkit-scrollbar-track { background: transparent; }
+#feed::-webkit-scrollbar-thumb { background: rgba(0,85,255,0.4); border-radius: 2px; }
+
+/* ── Typewriter block ──────────────────────────────────────────────────────── */
+#atlas-typewriter {
+  background: rgba(0,238,255,0.04);
+  border: 1px solid rgba(0,238,255,0.18);
+  border-radius: 5px;
+  padding: 7px 9px;
+  margin-bottom: 3px;
+  display: none;
+  flex-shrink: 0;
+}
+
+.atlas-prompt {
+  font-size: 8px; color: var(--cyan); opacity: 0.6;
+  letter-spacing: 1px; margin-bottom: 3px;
+}
+
+#tw-text {
+  font-size: 11px; color: var(--cyan);
+  line-height: 1.55; word-break: break-word;
+  text-shadow: 0 0 6px rgba(0,238,255,0.25);
+}
+
+.cursor {
+  display: inline-block; width: 6px; height: 11px;
+  background: var(--cyan); vertical-align: text-bottom; margin-left: 1px;
+  box-shadow: 0 0 4px var(--cyan);
+  animation: blink 0.85s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Feed items ────────────────────────────────────────────────────────────── */
+.feed-item {
+  display: grid;
+  grid-template-columns: 54px 14px 1fr;
+  column-gap: 5px;
+  align-items: start;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(51,68,102,0.2);
+  animation: fadeIn 0.35s ease forwards;
+  opacity: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-5px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.fi-ts      { font-size: 8px; color: var(--dim); padding-top: 1px; }
+.fi-icon    { font-size: 10px; text-align: center; }
+.fi-content { font-size: 10px; line-height: 1.45; word-break: break-word; }
+
+/* ── Feed modes ────────────────────────────────────────────────────────────── */
+.mode-focus   #weather-widget,
+.mode-focus   #spotify-widget,
+.mode-focus   #reminders-widget { display: none; }
+
+.mode-news    #system-widget,
+.mode-news    #spotify-widget,
+.mode-news    #context-widget { display: none; }
+
+.mode-minimal #weather-widget,
+.mode-minimal #spotify-widget,
+.mode-minimal #context-widget,
+.mode-minimal #system-widget,
+.mode-minimal #reminders-widget,
+.mode-minimal #obsidian-widget { display: none; }
+
+.mode-focus   #obsidian-widget { display: none; }
+</style>
+</head>
+<body>
+<div id="panel">
+
+  <!-- Header -->
+  <div id="panel-header">
+    <span id="panel-title">◈ ATLAS FEED</span>
+    <span id="panel-status">ONLINE</span>
+  </div>
+
+  <!-- ── Pinned Widgets ── -->
+  <div id="pinned">
+
+    <!-- Widget 1: Clock -->
+    <div class="card" id="clock-widget">
+      <div class="card-title">◈ SYSTEM TIME</div>
+      <div id="clock-time">--:--:--</div>
+      <div id="clock-date">---</div>
+    </div>
+
+    <!-- Widget 2: Weather -->
+    <div class="card" id="weather-widget">
+      <div class="card-title">◎ WEATHER</div>
+      <div id="wx-row">
+        <span id="wx-icon">--</span>
+        <span id="wx-temp">--°</span>
+        <div id="wx-right">
+          <div id="wx-cond">Loading…</div>
+          <div id="wx-detail">-- % · -- km/h</div>
+        </div>
+      </div>
+      <div id="wx-forecast">Today --/-- · Tomorrow --/--</div>
+    </div>
+
+    <!-- Widget 3: Now Playing -->
+    <div class="card" id="spotify-widget">
+      <div class="card-title">♫ NOW PLAYING</div>
+      <div id="sp-playing" style="display:none">
+        <div id="sp-track">---</div>
+        <div id="sp-artist">---</div>
+        <div class="waveform">
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+        </div>
+      </div>
+      <div id="sp-idle" class="sp-idle">Nothing playing</div>
+    </div>
+
+    <!-- Widget 4: System Stats -->
+    <div class="card" id="system-widget">
+      <div class="card-title">⚙ SYSTEM</div>
+      <div class="stat-row">
+        <span class="stat-label">CPU</span>
+        <div class="bar-track"><div class="bar-fill cpu" id="b-cpu" style="width:0%"></div></div>
+        <span class="stat-value" id="v-cpu">--%</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">RAM</span>
+        <div class="bar-track"><div class="bar-fill ram" id="b-ram" style="width:0%"></div></div>
+        <span class="stat-value" id="v-ram">--%</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">BATT</span>
+        <div class="bar-track"><div class="bar-fill batt" id="b-batt" style="width:0%"></div></div>
+        <span class="stat-value" id="v-batt">--%</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">NET↓</span>
+        <div class="bar-track"><div class="bar-fill net" id="b-net" style="width:0%"></div></div>
+        <span class="stat-value" id="v-net">--</span>
+      </div>
+    </div>
+
+    <!-- Widget 5: Active Context -->
+    <div class="card" id="context-widget">
+      <div class="card-title">◉ ACTIVE CONTEXT</div>
+      <div id="ctx-app">---</div>
+      <div id="ctx-detail"></div>
+    </div>
+
+    <!-- Widget 6: Reminders -->
+    <div class="card" id="reminders-widget">
+      <div class="card-title">⏰ REMINDERS</div>
+      <div id="reminders-list">
+        <div id="reminders-empty">No active reminders</div>
+      </div>
+    </div>
+
+    <!-- Widget 7: Obsidian Vault -->
+    <div class="card" id="obsidian-widget">
+      <div class="card-title">◈ OBSIDIAN VAULT</div>
+      <div id="obs-active" style="display:none">
+        <div id="obs-row">
+          <div>
+            <div id="obs-tasks">--</div>
+            <div id="obs-tasks-label">open tasks</div>
+          </div>
+          <div id="obs-daily-badge">--</div>
+        </div>
+        <div id="obs-urgent"></div>
+        <div id="obs-recent"></div>
+        <div id="obs-vault-name"></div>
+      </div>
+      <div id="obs-inactive">Vault not configured</div>
+    </div>
+
+  </div><!-- /pinned -->
+
+  <!-- ── Live Feed ── -->
+  <div id="feed-section">
+    <div id="feed-header">◈ LIVE FEED</div>
+    <div id="feed">
+      <!-- Typewriter is always at the bottom -->
+      <div id="atlas-typewriter">
+        <div class="atlas-prompt">ATLAS &gt;</div>
+        <div id="tw-text"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /panel -->
+
+<script>
+// ── Clock ─────────────────────────────────────────────────────────────────────
+(function() {
+  const timeEl = document.getElementById('clock-time');
+  const dateEl = document.getElementById('clock-date');
+  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function tick() {
+    const n = new Date();
+    const hh = String(n.getHours()).padStart(2,'0');
+    const mm = String(n.getMinutes()).padStart(2,'0');
+    const ss = String(n.getSeconds()).padStart(2,'0');
+    timeEl.textContent = hh + ':' + mm + ':' + ss;
+    dateEl.textContent = DAYS[n.getDay()] + '  '
+      + n.getDate() + ' ' + MONTHS[n.getMonth()] + ' ' + n.getFullYear();
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ── Weather ───────────────────────────────────────────────────────────────────
+function updateWeather(d) {
+  set('wx-icon',    d.icon || '--');
+  set('wx-temp',    d.temp + '°');
+  set('wx-cond',    d.condition || '');
+  set('wx-detail',  d.humidity  + '% · ' + d.wind + ' km/h');
+  set('wx-forecast',
+    'Today '   + d.today_lo + '/' + d.today_hi + '°  ·  ' +
+    'Tomorrow '+ d.tmrw_lo  + '/' + d.tmrw_hi  + '° · ' + d.tmrw_cond
+  );
+}
+
+// ── System Stats ──────────────────────────────────────────────────────────────
+function updateStats(d) {
+  bar('cpu',  d.cpu,      d.cpu + '%');
+  bar('ram',  d.ram,      d.ram + '%');
+  if (d.battery != null) {
+    bar('batt', d.battery, d.battery + (d.charging ? '⚡' : '%'));
+    document.getElementById('b-batt').style.background =
+      d.battery < 20 ? 'linear-gradient(90deg,#882200,#ff4455)' :
+                       'linear-gradient(90deg,#006622,#44ff88)';
+  } else {
+    bar('batt', 0, '--');
+  }
+  // throughput bar capped at 5 MB/s for display
+  const netPct = Math.min((d.throughput || 0) / 5 * 100, 100);
+  bar('net', netPct, (d.throughput || 0).toFixed(1) + 'M');
+}
+
+function bar(id, pct, label) {
+  const fill = document.getElementById('b-' + id);
+  const val  = document.getElementById('v-' + id);
+  if (fill) fill.style.width = Math.min(Math.max(pct, 0), 100) + '%';
+  if (val)  val.textContent  = label;
+}
+
+// ── Spotify ───────────────────────────────────────────────────────────────────
+function updateSpotify(d) {
+  const playing = document.getElementById('sp-playing');
+  const idle    = document.getElementById('sp-idle');
+  if (d.playing && d.track) {
+    set('sp-track',  d.track);
+    set('sp-artist', d.artist);
+    playing.style.display = 'block';
+    idle.style.display    = 'none';
+  } else {
+    playing.style.display = 'none';
+    idle.style.display    = 'block';
+  }
+}
+
+// ── Context ───────────────────────────────────────────────────────────────────
+function updateContext(d) {
+  set('ctx-app',    d.app    || '---');
+  set('ctx-detail', d.detail || '');
+}
+
+// ── News (feed items pushed by Python individually) ───────────────────────────
+function updateNews(headlines) { /* handled via addFeedItem */ }
+
+// ── Obsidian Vault ────────────────────────────────────────────────────────────
+function updateObsidian(d) {
+  var active   = document.getElementById('obs-active');
+  var inactive = document.getElementById('obs-inactive');
+  if (!d || !d.ready) {
+    if (active)   active.style.display   = 'none';
+    if (inactive) inactive.style.display = 'block';
+    return;
+  }
+  if (active)   active.style.display   = 'block';
+  if (inactive) inactive.style.display = 'none';
+
+  set('obs-tasks', String(d.task_count || 0));
+
+  var badge = document.getElementById('obs-daily-badge');
+  if (badge) {
+    badge.textContent  = d.daily_ready ? '📓 DAILY' : '◌ NO DAILY';
+    badge.style.color  = d.daily_ready ? '#aa88ff' : 'var(--dim)';
+    badge.style.borderColor = d.daily_ready
+      ? 'rgba(120,80,255,0.5)' : 'rgba(51,68,102,0.4)';
+  }
+
+  var urgentEl = document.getElementById('obs-urgent');
+  if (urgentEl) urgentEl.textContent = d.urgent_task ? '▶ ' + d.urgent_task : '';
+
+  var recentEl = document.getElementById('obs-recent');
+  if (recentEl) {
+    recentEl.innerHTML = '';
+    var notes = d.recent || [];
+    notes.slice(0,3).forEach(function(n) {
+      var div = document.createElement('div');
+      div.className = 'obs-note';
+      div.textContent = n.name || '';
+      recentEl.appendChild(div);
+    });
+  }
+
+  set('obs-vault-name', d.vault_name ? '⌁ ' + d.vault_name : '');
+}
+
+// ── Reminders ─────────────────────────────────────────────────────────────────
+function updateReminders(reminders) {
+  const list  = document.getElementById('reminders-list');
+  const empty = document.getElementById('reminders-empty');
+  if (!reminders || reminders.length === 0) {
+    list.innerHTML = '';
+    list.appendChild(empty);
+    return;
+  }
+  list.innerHTML = '';
+  reminders.slice(0,3).forEach(function(r) {
+    const div = document.createElement('div');
+    div.className = 'reminder-item';
+    div.innerHTML = '<span class="reminder-dot">▶</span>'
+      + '<span class="reminder-text">' + esc(r.text) + '</span>';
+    list.appendChild(div);
+  });
+}
+
+// ── Feed items ────────────────────────────────────────────────────────────────
+var MAX_FEED = 200;
+var _lastItem = null;
+
+function addFeedItem(item) {
+  const feed = document.getElementById('feed');
+  const tw   = document.getElementById('atlas-typewriter');
+
+  const el = document.createElement('div');
+  el.className = 'feed-item';
+  el.innerHTML =
+    '<span class="fi-ts">'   + esc(item.ts) + '</span>' +
+    '<span class="fi-icon" style="color:' + item.color + '">' + item.icon + '</span>' +
+    '<span class="fi-content" style="color:' + item.color + '">' + esc(item.content) + '</span>';
+
+  // Insert just before the typewriter block (which stays at bottom)
+  feed.insertBefore(el, tw);
+  _lastItem = el;
+
+  // Trim overflow
+  const all = feed.querySelectorAll('.feed-item');
+  if (all.length > MAX_FEED) all[0].remove();
+
+  // Scroll to bottom to reveal new item
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function clearFeed() {
+  const feed = document.getElementById('feed');
+  const tw   = document.getElementById('atlas-typewriter');
+  const items = feed.querySelectorAll('.feed-item');
+  items.forEach(function(el) { el.remove(); });
+}
+
+function pinLastItem() {
+  if (_lastItem) {
+    _lastItem.style.background    = 'rgba(0,238,255,0.06)';
+    _lastItem.style.borderTop     = '1px solid rgba(0,238,255,0.25)';
+    _lastItem.style.borderBottom  = '1px solid rgba(0,238,255,0.25)';
+    _lastItem.style.borderRadius  = '4px';
+    _lastItem.style.padding       = '4px 4px';
+    _lastItem.style.marginBottom  = '2px';
+  }
+}
+
+// ── ATLAS typewriter ──────────────────────────────────────────────────────────
+var _twTimer  = null;
+var _twFull   = '';
+var _twIdx    = 0;
+var _TW_SPEED = 16; // ms per char
+
+function atlasTypewriter(text) {
+  const box  = document.getElementById('atlas-typewriter');
+  const el   = document.getElementById('tw-text');
+  const feed = document.getElementById('feed');
+
+  if (_twTimer) { clearInterval(_twTimer); _twTimer = null; }
+
+  _twFull  = text;
+  _twIdx   = 0;
+  box.style.display = 'block';
+  el.innerHTML = '<span class="cursor"></span>';
+  feed.scrollTop = feed.scrollHeight;
+
+  _twTimer = setInterval(function() {
+    if (_twIdx >= _twFull.length) {
+      clearInterval(_twTimer); _twTimer = null;
+      // After 2.5 s hide typewriter and commit as feed item
+      setTimeout(function() {
+        box.style.display = 'none';
+        el.innerHTML = '';
+        addFeedItem({
+          ts:       now(),
+          category: 'ai',
+          color:    '#00eeff',
+          icon:     '◈',
+          content:  _twFull,
+        });
+      }, 2500);
+      return;
+    }
+    _twIdx += 2; // 2 chars per tick for smooth speed
+    el.innerHTML = esc(_twFull.slice(0, _twIdx)) + '<span class="cursor"></span>';
+    feed.scrollTop = feed.scrollHeight;
+  }, _TW_SPEED);
+}
+
+// ── Feed modes ────────────────────────────────────────────────────────────────
+function setFeedMode(mode) {
+  const panel = document.getElementById('panel');
+  panel.className = mode && mode !== 'full' ? 'mode-' + mode : '';
+}
+
+// ── Widget visibility ─────────────────────────────────────────────────────────
+var WIDGET_IDS = {
+  'weather':  'weather-widget',
+  'music':    'spotify-widget',
+  'system':   'system-widget',
+  'context':  'context-widget',
+  'reminders':'reminders-widget',
+  'clock':    'clock-widget',
+  'obsidian': 'obsidian-widget',
+};
+
+function hideWidget(name) {
+  var id = WIDGET_IDS[name] || (name + '-widget');
+  var el = document.getElementById(id);
+  if (el) el.classList.add('hidden');
+}
+
+function showWidget(name) {
+  var id = WIDGET_IDS[name] || (name + '-widget');
+  var el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function set(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function now() {
+  var n = new Date();
+  return [
+    String(n.getHours()).padStart(2,'0'),
+    String(n.getMinutes()).padStart(2,'0'),
+    String(n.getSeconds()).padStart(2,'0'),
+  ].join(':');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', function() {
+  addFeedItem({
+    ts: now(), category: 'system',
+    color: '#4488ff', icon: '⚙',
+    content: 'ATLAS mission control online.',
+  });
+});
+</script>
+</body>
+</html>

@@ -60,6 +60,18 @@ from self_editor import SelfEditor
 from brain import Brain
 from self_improve import SelfImproveEngine
 from widgets import DashboardWindow
+from spotify import SpotifyModule
+from feed import FeedManager
+from context import ContextManager
+from shazam import ShazamModule
+from imagegen import ImageGenModule
+from obsidian import ObsidianModule
+from vision import VisionModule
+from overlay import OverlayWindow, handle_overlay_command
+from ambient import AmbientModule
+from skills.loader import SkillsLoader
+from digest import DigestModule
+from sounds import SoundEngine
 
 import yaml
 
@@ -136,9 +148,12 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     engine = SelfImproveEngine(config, brain, PROJECT_ROOT)
     brain.set_self_improve(engine)
 
-    # Voice pipeline
+    # Spotify module — search catalog + control playback
+    spotify = SpotifyModule(config)
+    brain.set_spotify(spotify)
+
+    # Voice pipeline (callback set below, after all wrappers are built)
     vm = VoiceModule(config, window)
-    vm.set_response_callback(brain.handle)  # brain routes: Claude / MLX / Groq
 
     # Mute toggle from tray
     if hasattr(window, "_mute_act"):
@@ -146,7 +161,6 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
     # Dashboard widget panel
     dash = DashboardWindow(config)
-    # Wire dashboard voice commands through brain's meta handler
     _orig_meta = brain._handle_meta
 
     def _meta_with_dash(text: str):
@@ -160,8 +174,282 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     if config.get("dashboard", {}).get("visible_on_startup", True):
         QTimer.singleShot(1200, dash.show)
 
+    # Shazam module — song identification
+    shazam_mod = ShazamModule(config, state_cb=window.set_state, brain=brain)
+    shazam_mod.set_speak_callback(vm.speak)
+
+    _orig_meta_base = brain._handle_meta
+
+    def _meta_with_shazam(text: str):
+        resp = shazam_mod.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_base(text)
+
+    brain._handle_meta = _meta_with_shazam
+
+    # Context manager — active window detection
+    ctx_mgr = ContextManager(config)
+    ctx_mgr.set_web_module(web)
+
+    # Connect context updates to HUD and feed panel.
+    # Use QueuedConnection so updates are delivered on the main thread
+    # (context_updated is emitted from the polling background thread).
+    def _on_context(ctx: dict):
+        window.hud.set_context(ctx.get("app", ""), ctx.get("file", ""))
+        label = (f"{ctx['app']} | {ctx['file']}" if ctx.get("file") else ctx.get("app", ""))
+        if label:
+            window.feed_panel.add_feed_item("system", label)
+
+    ctx_mgr.context_updated.connect(_on_context, Qt.ConnectionType.QueuedConnection)
+
+    # Wire context voice commands into meta chain
+    _orig_meta_ctx_base = brain._handle_meta
+
+    def _meta_with_ctx(text: str):
+        resp = ctx_mgr.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_ctx_base(text)
+
+    brain._handle_meta = _meta_with_ctx
+
+    # Feed manager — drives the TARS-style side panel
+    feed_mgr = FeedManager(config)
+    window.feed_panel.set_feed_manager(feed_mgr)
+
+    # Feed voice commands — chained BEFORE handle wrapper so meta short-circuits correctly
+    _orig_meta_dash = brain._handle_meta
+
+    def _meta_with_feed(text: str):
+        resp = _handle_feed_command(text, window, feed_mgr)
+        if resp is not None:
+            return resp
+        return _orig_meta_dash(text)
+
+    brain._handle_meta = _meta_with_feed
+
+    # Wrap brain.handle to: (1) inject context prefix, (2) mirror into feed
+    # All UI calls use QTimer.singleShot(0) to post to the main thread —
+    # this callback runs on the VoiceWorker thread, not the main thread.
+    _orig_brain_handle = brain.handle
+
+    def _handle_with_feed(text: str) -> str:
+        _preview = f"You: {text[:120]}"
+        QTimer.singleShot(0, lambda: window.feed_panel.add_feed_item("voice", _preview))
+        response = _orig_brain_handle(text)
+        if response:
+            _r = response
+            QTimer.singleShot(0, lambda: window.feed_panel.push_atlas_response(_r))
+        return response
+
+    brain.handle = _handle_with_feed
+
+    # Register the final wrapped callback with the voice module
+    vm.set_response_callback(_handle_with_feed)
+
+    # Show feed panel by default (side-by-side layout)
+    QTimer.singleShot(1000, window.show_feed)
+
+    # Start background services
+    QTimer.singleShot(1500, feed_mgr.start)
+    QTimer.singleShot(2000, ctx_mgr.start)
+
+    # Keep references
+    window._feed_manager   = feed_mgr
+    window._ctx_manager    = ctx_mgr
+    window._shazam         = shazam_mod
+
     # Give the window 800 ms to finish painting before mic capture starts
     QTimer.singleShot(800, vm.start)
+
+    # Image generation module — no download triggered on init
+    imagegen_mod = ImageGenModule(
+        config,
+        state_cb=window.set_state,
+        speak_cb=vm.speak,
+        show_image_cb=window.image_panel.show_image,
+        brain=brain,
+    )
+    window.image_panel.set_save_callback(imagegen_mod._save_to_desktop)
+    window.image_panel.set_preview_callback(imagegen_mod._open_in_preview)
+
+    _orig_meta_imagegen_base = brain._handle_meta
+
+    def _meta_with_imagegen(text: str):
+        resp = imagegen_mod.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_imagegen_base(text)
+
+    brain._handle_meta = _meta_with_imagegen
+    window._imagegen = imagegen_mod
+
+    # Obsidian module — full vault integration, no extra packages
+    obsidian_mod = ObsidianModule(config, speak_cb=vm.speak, brain=brain)
+    feed_mgr.set_obsidian_module(obsidian_mod)
+
+    _orig_meta_obs_base = brain._handle_meta
+
+    def _meta_with_obsidian(text: str):
+        resp = obsidian_mod.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_obs_base(text)
+
+    brain._handle_meta = _meta_with_obsidian
+
+    # Track last ATLAS response so "save that to Obsidian" / "note this" work
+    _orig_handle_with_feed = brain.handle
+
+    def _handle_with_feed_obs(text: str) -> str:
+        response = _orig_handle_with_feed(text)
+        if response:
+            obsidian_mod.set_last_response(response)
+        return response
+
+    brain.handle = _handle_with_feed_obs
+    vm.set_response_callback(_handle_with_feed_obs)
+
+    window._obsidian = obsidian_mod
+
+    # ── Sound engine ──────────────────────────────────────────────────────────
+    sounds = SoundEngine(config)
+    sounds.start_ambient()
+
+    # Sound signals wired in _post_calibration_setup (worker doesn't exist yet)
+
+    _orig_meta_sounds = brain._handle_meta
+
+    def _meta_with_sounds(text: str):
+        resp = sounds.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_sounds(text)
+
+    brain._handle_meta = _meta_with_sounds
+
+    # ── Screen vision ─────────────────────────────────────────────────────────
+    vision = VisionModule(config, brain=brain)
+    vision.set_speak_callback(vm.speak)
+    vision.set_state_callback(window.set_state)
+
+    _orig_meta_vision = brain._handle_meta
+
+    def _meta_with_vision(text: str):
+        resp = vision.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_vision(text)
+
+    brain._handle_meta = _meta_with_vision
+
+    # ── Cursor overlay ────────────────────────────────────────────────────────
+    overlay = OverlayWindow(config)
+
+    # Overlay signals wired in _post_calibration_setup (worker doesn't exist yet)
+
+    _orig_brain_handle_overlay = brain.handle
+
+    def _handle_with_overlay(text: str) -> str:
+        overlay.clear_bubble()
+        response = _orig_brain_handle_overlay(text)
+        if response:
+            _r = response
+            QTimer.singleShot(0, lambda: overlay.show_response(_r))
+        return response
+
+    brain.handle = _handle_with_overlay
+    vm.set_response_callback(_handle_with_overlay)
+
+    _orig_meta_overlay = brain._handle_meta
+
+    def _meta_with_overlay(text: str):
+        resp = handle_overlay_command(text, overlay)
+        if resp is not None:
+            return resp
+        return _orig_meta_overlay(text)
+
+    brain._handle_meta = _meta_with_overlay
+
+    # ── Skills system ─────────────────────────────────────────────────────────
+    skills_context = {
+        "brain":        brain,
+        "config":       config,
+        "vision":       vision,
+        "speak_cb":     vm.speak,
+        "voice_module": vm,
+    }
+    skills = SkillsLoader(config, context=skills_context)
+    skills.start()
+
+    _orig_meta_skills = brain._handle_meta
+
+    def _meta_with_skills(text: str):
+        resp = skills.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_skills(text)
+
+    brain._handle_meta = _meta_with_skills
+
+    # ── Morning digest ────────────────────────────────────────────────────────
+    digest = DigestModule(config, brain=brain)
+    digest.set_speak_callback(vm.speak)
+    digest.set_feed_callback(window.feed_panel.add_feed_item)
+    QTimer.singleShot(3000, digest.start)
+
+    _orig_meta_digest = brain._handle_meta
+
+    def _meta_with_digest(text: str):
+        resp = digest.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_digest(text)
+
+    brain._handle_meta = _meta_with_digest
+
+    # ── Ambient always-on module ──────────────────────────────────────────────
+    ambient = AmbientModule(
+        config,
+        brain=brain,
+        voice_module=vm,
+        vision=vision,
+        state_cb=window.set_state,
+    )
+
+    # Wire context manager updates → ambient context memory
+    ctx_mgr.context_updated.connect(
+        lambda ctx: ambient.update_context(ctx.get("app", ""), ctx.get("file", "")),
+        Qt.ConnectionType.QueuedConnection
+    )
+
+    _orig_meta_ambient = brain._handle_meta
+
+    def _meta_with_ambient(text: str):
+        resp = ambient.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_ambient(text)
+
+    brain._handle_meta = _meta_with_ambient
+
+    # Startup sequence:
+    # • vm.start() fires at 800ms → mic calibration runs 800ms–2300ms
+    # • Pre-warm TTS at 1000ms (safe — no audio output)
+    # • Ambient push-to-talk starts at 2500ms
+    # • At 3500ms calibration is done: wire worker signals then play chime
+    def _post_calibration_setup():
+        if vm._worker:
+            vm._worker.wake_word_detected.connect(lambda: sounds.play("WAKE"))
+            vm._worker.speaking_started.connect(lambda: sounds.play("RESPONSE_READY"))
+            vm._worker.wake_word_detected.connect(lambda: overlay.set_recording(True))
+            vm._worker.speaking_done.connect(lambda: overlay.set_recording(False))
+        sounds.play("STARTUP")
+
+    QTimer.singleShot(1000, vm.pre_warm)
+    QTimer.singleShot(2500, ambient.start)
+    QTimer.singleShot(3500, _post_calibration_setup)
 
     # Keep references so they aren't GC'd
     window._core           = core
@@ -172,12 +460,116 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     window._voice_module   = vm
     window._brain          = brain
     window._self_improve   = engine
+    window._spotify        = spotify
     window._dashboard      = dash
+    window._vision         = vision
+    window._overlay        = overlay
+    window._skills         = skills
+    window._digest         = digest
+    window._ambient        = ambient
+    window._sounds         = sounds
 
     # Graceful shutdown
     app = QApplication.instance()
     if app:
         app.aboutToQuit.connect(vm.stop)
+        app.aboutToQuit.connect(ctx_mgr.stop)
+        app.aboutToQuit.connect(feed_mgr.stop)
+        app.aboutToQuit.connect(vision.stop)
+        app.aboutToQuit.connect(ambient.stop)
+        app.aboutToQuit.connect(sounds.stop)
+        app.aboutToQuit.connect(skills.stop)
+        app.aboutToQuit.connect(digest.stop)
+
+
+def _handle_feed_command(text: str, window: ATLASMainWindow, feed_mgr: FeedManager):
+    """
+    Handle feed panel voice commands.
+    Returns a response string if handled, None otherwise.
+    """
+    lower = text.lower().strip()
+    fp    = window.feed_panel
+
+    # ── Show / hide ──────────────────────────────────────────────────────────
+    if any(p in lower for p in ("atlas show feed", "show the feed", "open feed")):
+        window.show_feed()
+        return "Feed panel open."
+
+    if any(p in lower for p in ("atlas hide feed", "hide the feed", "close feed")):
+        window.hide_feed()
+        return "Feed panel hidden."
+
+    if any(p in lower for p in ("atlas toggle feed", "toggle feed")):
+        window.toggle_feed()
+        return "Feed panel toggled."
+
+    # ── Side ─────────────────────────────────────────────────────────────────
+    if any(p in lower for p in ("atlas move feed to left", "feed on the left", "move feed left")):
+        feed_mgr.set_feed_side("left")
+        return "Feed will appear on the left next launch."
+
+    if any(p in lower for p in ("atlas move feed to right", "feed on the right", "move feed right")):
+        feed_mgr.set_feed_side("right")
+        return "Feed will appear on the right next launch."
+
+    # ── Modes ────────────────────────────────────────────────────────────────
+    if any(p in lower for p in ("atlas focus mode", "feed focus mode")):
+        fp.set_feed_mode("focus")
+        return "Focus mode — showing coding and system info only."
+
+    if any(p in lower for p in ("atlas news mode", "feed news mode")):
+        fp.set_feed_mode("news")
+        return "News mode — showing news and weather."
+
+    if any(p in lower for p in ("atlas full feed", "full feed mode", "atlas show everything")):
+        fp.set_feed_mode("full")
+        return "Full feed — showing everything."
+
+    if any(p in lower for p in ("atlas minimal feed", "minimal feed")):
+        fp.set_feed_mode("minimal")
+        return "Minimal feed — clock and ATLAS responses only."
+
+    if any(p in lower for p in ("atlas briefing mode", "briefing mode")):
+        fp.set_feed_mode("full")
+        window.show_feed()
+        return "Briefing mode active. Feed panel open."
+
+    # ── Utilities ─────────────────────────────────────────────────────────────
+    if any(p in lower for p in ("atlas clear feed", "clear the feed", "clear feed")):
+        fp.clear_feed()
+        return "Feed cleared."
+
+    if any(p in lower for p in ("atlas pin that", "pin that", "pin this")):
+        fp.pin_last_item()
+        return "Item pinned."
+
+    # ── Widget visibility ─────────────────────────────────────────────────────
+    _WIDGET_NAMES = {
+        "weather": "weather", "clock": "clock", "music": "music",
+        "spotify": "music",   "system": "system", "stats": "system",
+        "context": "context", "reminders": "reminders",
+    }
+    for word, widget in _WIDGET_NAMES.items():
+        if f"remove {word} from feed" in lower or f"hide {word}" in lower:
+            fp.hide_widget(widget)
+            return f"{word.capitalize()} widget hidden."
+        if f"add {word} to feed" in lower or f"show {word}" in lower:
+            fp.show_widget(widget)
+            return f"{word.capitalize()} widget visible."
+
+    # ── Reminders ─────────────────────────────────────────────────────────────
+    if lower.startswith("atlas add reminder ") or lower.startswith("add reminder "):
+        reminder_text = lower.split("reminder ", 1)[-1].strip()
+        if reminder_text:
+            feed_mgr.add_reminder(reminder_text)
+            return f"Reminder added: {reminder_text}."
+
+    if any(p in lower for p in ("atlas mark that done", "mark reminder done",
+                                 "complete reminder", "done with reminder")):
+        feed_mgr.complete_reminder()
+        return "Reminder marked complete."
+
+    return None
 
 
 def _run_demo(window: ATLASMainWindow) -> None:

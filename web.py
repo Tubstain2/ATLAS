@@ -38,8 +38,9 @@ from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
-# Suppress the duckduckgo_search → ddgs rename warning
+# Suppress any residual duckduckgo_search deprecation warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="ddgs")
 
 # ── tunables ──────────────────────────────────────────────────────────────────
 _DEFAULT_MAX_RESULTS    = 5
@@ -94,7 +95,7 @@ class DuckDuckGoSearch:
     def __init__(self):
         self._last_call = 0.0
         try:
-            from duckduckgo_search import DDGS   # noqa: F401
+            from ddgs import DDGS   # noqa: F401
             self._available = True
         except ImportError:
             log.error("duckduckgo-search not installed — pip install duckduckgo-search")
@@ -138,7 +139,7 @@ class DuckDuckGoSearch:
 
     def _call(self, kind: str, query: str, max_results: int) -> list[dict]:
         """Throttled DDG call with retry-on-rate-limit."""
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
 
         for attempt in range(_SEARCH_RETRIES + 1):
             self._throttle()

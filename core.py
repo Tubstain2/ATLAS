@@ -68,6 +68,8 @@ Convert the user's natural language command into a JSON action object.
 Output ONLY a valid JSON object — no explanation, no markdown, no code fences.
 
 Available actions:
+
+App control:
   open_app:    {"action":"open_app",    "name":"AppName",      "response":"..."}
   close_app:   {"action":"close_app",   "name":"AppName",      "response":"..."}
   focus_app:   {"action":"focus_app",   "name":"AppName",      "response":"..."}
@@ -75,22 +77,78 @@ Available actions:
   maximize_app:{"action":"maximize_app","name":"AppName",      "response":"..."}
   open_url:    {"action":"open_url",    "url":"https://...",   "response":"..."}
   list_windows:{"action":"list_windows",                       "response":"Listing open windows."}
+
+Keyboard / mouse:
   type_text:   {"action":"type_text",   "text":"...",          "response":"..."}
   press_key:   {"action":"press_key",   "key":"...", "modifiers":[], "response":"..."}
   hotkey:      {"action":"hotkey",      "keys":["command","c"],"response":"..."}
   click:       {"action":"click",       "x":0, "y":0, "button":"left", "double":false, "response":"..."}
   scroll:      {"action":"scroll",      "direction":"down", "amount":3, "response":"..."}
-  screenshot:  {"action":"screenshot",                         "response":"Taking a screenshot."}
-  read_screen: {"action":"read_screen",                        "response":"Reading the screen."}
-  run_command: {"action":"run_command", "command":"...",       "response":"..."}
   copy:        {"action":"copy",                               "response":"Copied to clipboard."}
   paste:       {"action":"paste",                              "response":"Pasted from clipboard."}
   select_all:  {"action":"select_all",                         "response":"Selected all."}
+
+Screen:
+  screenshot:  {"action":"screenshot",                         "response":"Taking a screenshot."}
+  read_screen: {"action":"read_screen",                        "response":"Reading the screen."}
+
+Volume / audio:
+  volume_up:   {"action":"volume_up",                          "response":"Turned volume up."}
+  volume_down: {"action":"volume_down",                        "response":"Turned volume down."}
+  volume_set:  {"action":"volume_set",  "level":50,            "response":"Volume set to 50."}
+  volume_get:  {"action":"volume_get",                         "response":"Checking volume."}
+  mute:        {"action":"mute",                               "response":"Muted."}
+  unmute:      {"action":"unmute",                             "response":"Unmuted."}
+
+Display:
+  brightness_up:   {"action":"brightness_up",                  "response":"Increased brightness."}
+  brightness_down: {"action":"brightness_down",                "response":"Decreased brightness."}
+
+System info:
+  battery:     {"action":"battery",                            "response":"Checking battery."}
+  system_stats:{"action":"system_stats",                       "response":"Checking system stats."}
+
+Power:
+  lock_screen: {"action":"lock_screen",                        "response":"Locking screen."}
+  sleep:       {"action":"sleep",                              "response":"Putting Mac to sleep."}
+
+Files:
+  open_folder: {"action":"open_folder", "name":"Downloads",    "response":"Opening Downloads."}
+  find_file:   {"action":"find_file",   "name":"document.pdf", "response":"Searching for that file."}
+  create_folder:{"action":"create_folder","name":"NewFolder","path":"~/Desktop","response":"Created folder."}
+  trash_file:  {"action":"trash_file",  "path":"~/file.txt",   "response":"Moved to trash."}
+
+Browser:
+  new_tab:     {"action":"new_tab",                            "response":"Opening new tab."}
+  close_tab:   {"action":"close_tab",                          "response":"Closing tab."}
+  go_back:     {"action":"go_back",                            "response":"Going back."}
+  go_forward:  {"action":"go_forward",                         "response":"Going forward."}
+  reload:      {"action":"reload",                             "response":"Reloading page."}
+  browser_search:{"action":"browser_search","query":"...",     "response":"Searching for ..."}
+
+Media playback (use run_command with osascript on macOS):
+  Play something/start Spotify: {"action":"run_command","command":"open -a Spotify && sleep 1 && osascript -e 'tell application \"Spotify\" to play'","response":"Starting Spotify."}
+  Pause Spotify:         {"action":"run_command",  "command":"osascript -e 'tell application \"Spotify\" to pause'",      "response":"Paused."}
+  Resume Spotify:        {"action":"run_command",  "command":"osascript -e 'tell application \"Spotify\" to play'",       "response":"Resumed."}
+  Toggle play/pause:     {"action":"run_command",  "command":"osascript -e 'tell application \"Spotify\" to playpause'",  "response":"Toggled playback."}
+  Spotify next track:    {"action":"run_command",  "command":"osascript -e 'tell application \"Spotify\" to next track'", "response":"Next track."}
+  Spotify previous:      {"action":"run_command",  "command":"osascript -e 'tell application \"Spotify\" to previous track'","response":"Previous track."}
+  Play YouTube:          {"action":"open_url",     "url":"https://youtube.com", "response":"Opening YouTube."}
+
+Shell / permissions:
+  run_command: {"action":"run_command", "command":"...",       "response":"..."}
+  check_permissions:{"action":"check_permissions",             "response":"Checking permissions."}
+
+Fallback:
   none:        {"action":"none",                               "response":"I'm not sure what to do."}
 
 Rules:
 - "response" is a short, natural voice sentence (no markdown) confirming the action.
 - On macOS use "command" as the modifier key (not "ctrl").
+- Prefer specific actions (volume_up, mute, brightness_up) over run_command equivalents.
+- For "play something on Spotify" or "open Spotify": use open_app with name "Spotify".
+- For "play/pause/next/previous" on Spotify: use run_command with osascript.
+- open_folder names: Downloads, Desktop, Documents, Music, Movies, Pictures.
 - Output ONLY the JSON object.\
 """
 
@@ -291,6 +349,7 @@ class _GroqClient:
                     messages=payload,
                     max_tokens=limit,
                     temperature=self._temperature,
+                    timeout=25.0,
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as exc:
@@ -463,13 +522,14 @@ class ATLASCore:
             self._history.add("assistant", response)
             return response
 
-        # Control routing
+        # Control routing — falls through to AI if Groq returns action="none"
         if self._control is not None and self._control.is_control_query(text):
             log.info("[CTRL] routing: %r", text[:60])
             response = self._call_control(text)
-            self._history.add("user", text)
-            self._history.add("assistant", response)
-            return response
+            if response is not None:
+                self._history.add("user", text)
+                self._history.add("assistant", response)
+                return response
 
         # Web augmentation: inject live DuckDuckGo context when needed
         web_context = ""
@@ -597,14 +657,20 @@ class ATLASCore:
 
     # ── Control routing ───────────────────────────────────────────────────────
 
-    def _call_control(self, text: str) -> str:
+    def _call_control(self, text: str) -> Optional[str]:
+        """Parse text into a control action and execute it.
+        Returns None if the action is 'none' so the caller can fall through to AI."""
         if not self._groq.available:
-            return "No AI backend is available to parse that control command."
+            return None
         raw    = self._groq.ask([{"role": "user", "content": text}], _CONTROL_PROMPT)
         action = _parse_control_json(raw)
-        log.info("[CTRL] action=%r params=%r", action.get("action"), {
+        kind   = action.get("action", "none")
+        log.info("[CTRL] action=%r params=%r", kind, {
             k: v for k, v in action.items() if k not in ("action", "response")
         })
+        if kind == "none":
+            log.info("[CTRL] Groq returned 'none' — falling through to AI.")
+            return None
         return self._control.execute(action)
 
     # ── Main call ─────────────────────────────────────────────────────────────

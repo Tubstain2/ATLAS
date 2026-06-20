@@ -26,13 +26,15 @@ _STATE_LABEL = {
     "listening":  "LISTENING",
     "responding": "RESPONDING",
     "thinking":   "PROCESSING",
+    "detecting":  "DETECTING",
 }
 
 _STATE_COLOR = {
     "idle":       (0,  105, 185),
     "listening":  (0,  165, 255),
     "responding": (0,  232, 242),
-    "thinking":   (148, 82, 255),
+    "thinking":   (148, 82,  255),
+    "detecting":  (210, 160,   0),
 }
 
 _MODULES = ["VOICE", "WEB", "CTRL", "EDIT"]
@@ -50,11 +52,13 @@ class HUDWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setStyleSheet("background: transparent;")
 
-        self._state   = "idle"
-        self._muted   = False
-        self._modules = {m: False for m in _MODULES}
-        self._blink   = True
-        self._os      = platform.system()
+        self._state    = "idle"
+        self._muted    = False
+        self._modules  = {m: False for m in _MODULES}
+        self._blink    = True
+        self._os       = platform.system()
+        self._ctx_app  = ""
+        self._ctx_file = ""
 
         self._f_sm = QFont("Courier New", 9)
         self._f_md = QFont("Courier New", 11)
@@ -86,6 +90,11 @@ class HUDWidget(QWidget):
         if module in self._modules:
             self._modules[module] = active
             self.update()
+
+    def set_context(self, app: str, file: str = "") -> None:
+        self._ctx_app  = app[:28] if app else ""
+        self._ctx_file = file[:30] if file else ""
+        self.update()
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
@@ -189,6 +198,15 @@ class HUDWidget(QWidget):
         painter.setPen(QPen(QColor(0, 80, 145, 110)))
         status = "MUTED" if self._muted else "ACTIVE"
         painter.drawText(int(m + 6), int(h - m - 13), f"SYSTEM: {status}")
+
+        # Active context line — shown just above the state dot
+        if self._ctx_app:
+            ctx_line = self._ctx_app
+            if self._ctx_file:
+                ctx_line += f"  {self._ctx_file}"
+            painter.setFont(self._f_sm)
+            painter.setPen(QPen(QColor(0, 162, 255, 90)))
+            painter.drawText(int(m + 6), int(h - m - 52), ctx_line)
 
     def _draw_modules(self, painter, w, h, m):
         bw = 50

@@ -23,10 +23,11 @@ from PyQt6.QtGui import (
 
 
 class OrbState(Enum):
-    IDLE = "idle"
-    LISTENING = "listening"
+    IDLE       = "idle"
+    LISTENING  = "listening"
     RESPONDING = "responding"
-    THINKING = "thinking"
+    THINKING   = "thinking"
+    DETECTING  = "detecting"   # song / shazam detection — gold pulse
 
 
 # Per-state color palettes — (r, g, b) tuples for fast interpolation
@@ -62,6 +63,14 @@ _PALETTES = {
         "glow":     (90,  50,  210, 105),
         "ring":     (130, 90,  255, 145),
         "particle": (170, 150, 255),
+    },
+    OrbState.DETECTING: {
+        "core_hi":  (255, 240, 160),
+        "core_mid": (220, 160,   0),
+        "core_lo":  ( 90,  55,   0),
+        "glow":     (210, 150,   0, 115),
+        "ring":     (255, 200,  50, 155),
+        "particle": (255, 220, 100),
     },
 }
 

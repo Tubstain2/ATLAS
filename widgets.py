@@ -303,7 +303,7 @@ class NewsWidget(_BaseWidget):
 
     def refresh(self) -> None:
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             headlines: list[str] = []
             with DDGS() as ddgs:
                 for topic in self._topics[:2]:
