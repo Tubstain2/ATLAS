@@ -44,8 +44,8 @@ api:
   # ── AI Brains ───────────────────────────────────────────────────────────────
   mlx_model: "mlx-community/Llama-3.2-3B-Instruct-4bit"   # fast local voice (Apple Silicon)
   groq_model: "llama-3.3-70b-versatile"                    # deep reasoning + cloud fallback (GROQ_API_KEY)
-  qwen_coder: "qwen/qwen3-coder-480b-a35b-instruct:free"   # full-project codegen (OPENROUTER_API_KEY)
-  qwen_reasoning: "qwen/qwen3-30b-a3b:free"                # deep multi-step reasoning (OPENROUTER_API_KEY)
+  qwen_coder: "qwen/qwen3-coder:free"                       # full-project codegen (OPENROUTER_API_KEY)
+  qwen_reasoning: "qwen/qwen3-next-80b-a3b-instruct:free"  # deep multi-step reasoning (OPENROUTER_API_KEY)
   # ── Markets ─────────────────────────────────────────────────────────────────
   tracked_crypto: ["bitcoin", "ethereum"]
   tracked_stocks: ["AAPL", "TSLA"]
@@ -93,7 +93,7 @@ self_editor:
   max_backups: 50
 
 obsidian:
-  vault_path: ""                       # full path to your Obsidian vault folder
+  vault_path: "/Users/kairavpereira/Desktop/atlas/ATLAS"  # full path to your Obsidian vault folder
   daily_folder: "Daily"
   notes_folder: "Notes"
   tasks_file: "Tasks/tasks.md"
