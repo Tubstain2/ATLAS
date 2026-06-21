@@ -103,6 +103,14 @@ obsidian:
   save_briefing_to_daily: true
   ask_before_saving_research: true
 
+# ── Chrome Control ────────────────────────────────────────────────────────────
+chrome:
+  chrome_control_enabled: true
+  chrome_debug_port: 9222
+  chrome_auto_relaunch: true
+  form_safety_enabled: true
+  require_confirmation_before_submit: true
+
 # ── Sound design ──────────────────────────────────────────────────────────────
 sound_effects_enabled: true
 sound_volume: 0.3

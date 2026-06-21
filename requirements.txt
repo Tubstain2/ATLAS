@@ -90,3 +90,6 @@ pyobjc-framework-Cocoa>=10.0         # NSWindow, NSApplication (cursor overlay)
 pyobjc-framework-Quartz>=10.0        # ScreenCaptureKit screen capture
 pyobjc-framework-AppKit>=10.0        # NSWorkspace, menu bar (ambient mode)
 pynput>=1.7.6                        # global hotkey (push-to-talk cmd+space)
+
+# ── Chrome Control Module ──────────────────────────────────────────────────────
+playwright>=1.40.0          # CDP browser control (run: playwright install chromium)

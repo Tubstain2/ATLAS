@@ -27,6 +27,11 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional
 
+try:
+    from chrome_control import ChromeControl as _ChromeControl
+except ImportError:
+    _ChromeControl = None  # type: ignore
+
 log = logging.getLogger(__name__)
 
 # ── System prompts ─────────────────────────────────────────────────────────────
@@ -484,6 +489,7 @@ class ATLASCore:
         self._web:     Optional[object] = None
         self._control: Optional[object] = None
         self._editor:  Optional[object] = None
+        self._chrome:  Optional[object] = None
 
         if self._mlx.available:
             log.info("ATLASCore ready — primary: MLX (%s), fallback: Groq (%s)", mlx_model, groq_model)
@@ -506,6 +512,10 @@ class ATLASCore:
         self._editor = editor
         log.info("Self-editor attached to ATLASCore.")
 
+    def set_chrome_control(self, chrome) -> None:
+        self._chrome = chrome
+        log.info("ChromeControl attached to ATLASCore.")
+
     # ── Primary entry point ───────────────────────────────────────────────────
 
     def handle(self, text: str) -> str:
@@ -521,6 +531,15 @@ class ATLASCore:
             self._history.add("user", text)
             self._history.add("assistant", response)
             return response
+
+        # Chrome control routing — checked before system control
+        if self._chrome is not None:
+            chrome_response = self._chrome.handle(text)
+            if chrome_response is not None:
+                log.info("[CHROME] routing: %r", text[:60])
+                self._history.add("user", text)
+                self._history.add("assistant", chrome_response)
+                return chrome_response
 
         # Control routing — falls through to AI if Groq returns action="none"
         if self._control is not None and self._control.is_control_query(text):
