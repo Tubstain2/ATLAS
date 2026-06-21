@@ -2,9 +2,10 @@
 ATLAS Brain — Multi-engine AI router
 
 Engine hierarchy (best available is used):
-  Gemini 2.0 Flash  — complex reasoning, coding, research  (GEMINI_API_KEY)
-  Groq 70B          — conversational fallback               (GROQ_API_KEY)
-  ATLASCore → MLX   — fast local voice / control            (no key needed)
+  Qwen3-30b (OpenRouter :free)  — all smart queries, reasoning, writing  (OPENROUTER_API_KEY)
+  Groq 70B                      — fallback if Qwen unavailable            (GROQ_API_KEY)
+  Qwen3-Coder 480b              — explicit full-build coding tasks         (OPENROUTER_API_KEY)
+  ATLASCore → MLX               — fast local voice / control               (no key needed)
 
 Maintains conversation history (last 20 turns) and saves sessions
 to conversations/ after each exchange.
@@ -124,7 +125,7 @@ class Brain:
 
         self._history: list[dict] = []
         self._max_history  = 40        # 20 turns × 2
-        self._lock         = RLock()   # reentrant: Gemini fallback calls Groq without deadlock
+        self._lock         = RLock()
         self._routing_mode = "auto"    # 'auto' | 'groq' | 'core'
 
         self._core         = None      # ATLASCore
@@ -136,24 +137,6 @@ class Brain:
         self._conv_dir = root / "conversations"
         self._conv_dir.mkdir(exist_ok=True)
 
-        # ── Gemini client (primary smart engine) ──────────────────────────────
-        self._gemini = None
-        gemini_key   = os.environ.get("GEMINI_API_KEY", "").strip()
-        if gemini_key:
-            try:
-                from openai import OpenAI
-                self._gemini = OpenAI(
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    api_key=gemini_key,
-                )
-                log.info("Brain: Gemini 2.0 Flash ready (primary smart engine).")
-            except ImportError:
-                log.error("openai package missing — pip install openai")
-            except Exception as exc:
-                log.error("Gemini init failed: %s", exc)
-        else:
-            log.info("GEMINI_API_KEY not set — Groq will handle complex queries.")
-
         # ── Groq client (fallback smart engine) ───────────────────────────────
         self._client = None
         key = os.environ.get("GROQ_API_KEY", "").strip()
@@ -163,8 +146,7 @@ class Brain:
             try:
                 from groq import Groq
                 self._client = Groq(api_key=key)
-                log.info("Brain: Groq %s ready (%s).",
-                         "fallback" if self._gemini else "primary", self._model)
+                log.info("Brain: Groq ready as fallback (%s).", self._model)
             except ImportError:
                 log.error("groq package missing — pip install groq")
             except Exception as exc:
@@ -182,11 +164,11 @@ class Brain:
                     base_url="https://openrouter.ai/api/v1",
                     api_key=qwen_key,
                 )
-                log.info("Brain: Qwen3 models ready via OpenRouter.")
+                log.info("Brain: Qwen3 ready as primary smart engine (OpenRouter).")
             except Exception as exc:
                 log.warning("Qwen3 init failed: %s", exc)
         else:
-            log.info("OPENROUTER_API_KEY not set — Qwen3 models disabled.")
+            log.info("OPENROUTER_API_KEY not set — Groq will handle smart queries.")
 
     # ── Wiring ────────────────────────────────────────────────────────────────
 
@@ -203,20 +185,16 @@ class Brain:
         log.info("Spotify module wired into Brain.")
 
     @property
-    def gemini_available(self) -> bool:
-        return self._gemini is not None
-
-    @property
     def groq_available(self) -> bool:
         return self._client is not None
 
     @property
-    def smart_available(self) -> bool:
-        return self.gemini_available or self.groq_available
-
-    @property
     def qwen_available(self) -> bool:
         return self._qwen_client is not None
+
+    @property
+    def smart_available(self) -> bool:
+        return self.qwen_available or self.groq_available
 
     # Backward-compat aliases used by self_improve.py
     @property
@@ -285,8 +263,8 @@ class Brain:
         text = text.strip()
         if not text:
             return ""
-        if self._gemini:
-            return self._raw_gemini([{"role": "user", "content": text}])
+        if self._qwen_client:
+            return self._raw_qwen(self._qwen_next_model, [{"role": "user", "content": text}])
         if self._client:
             return self._raw_groq([{"role": "user", "content": text}])
         return self._core.ask(text) if self._core else self._no_core()
@@ -386,16 +364,14 @@ class Brain:
             return (f"Qwen3 isn't available, {self._user_name}. "
                     "Set OPENROUTER_API_KEY to enable it.")
 
-        # Qwen3 Next — force deep reasoning for next response
+        # Qwen3 deep reasoning — forces smart route for next response
         if any(p in lower for p in ("atlas think deeper", "think deeper",
                                      "atlas use your best reasoning",
                                      "use your best reasoning")):
-            if self._qwen_client:
-                self._routing_mode = "qwen_next"
-                return (f"Engaging Qwen3 deep reasoning for the next response, "
-                        f"{self._user_name}.")
-            return (f"Qwen3 isn't available, {self._user_name}. "
-                    "Set OPENROUTER_API_KEY to enable it.")
+            self._routing_mode = "groq" if not self._qwen_client else "auto"
+            engine = "Qwen3" if self._qwen_client else "Groq"
+            return (f"Engaging {engine} deep reasoning for the next response, "
+                    f"{self._user_name}.")
 
         return None
 
@@ -404,26 +380,9 @@ class Brain:
     def _ask_smart_with_history(self, text: str) -> str:
         messages = self._sanitized_history()
         messages.append({"role": "user", "content": text})
-        if self._gemini:
-            return self._raw_gemini(messages)
+        if self._qwen_client:
+            return self._raw_qwen(self._qwen_next_model, messages)
         return self._raw_groq(messages)
-
-    def _raw_gemini(self, messages: list[dict]) -> str:
-        with self._lock:
-            try:
-                full_messages = [{"role": "system", "content": self._system}] + messages
-                resp = self._gemini.chat.completions.create(
-                    model="gemini-2.0-flash",
-                    messages=full_messages,
-                    max_tokens=self._max_tokens,
-                    timeout=self._timeout,
-                )
-                return resp.choices[0].message.content.strip()
-            except Exception as exc:
-                log.error("Gemini error (%s): %s — trying Groq.", type(exc).__name__, exc)
-                if self._client:
-                    return self._raw_groq(messages)
-                return self._fallback_to_core(messages)
 
     def _raw_groq(self, messages: list[dict]) -> str:
         with self._lock:
@@ -460,7 +419,9 @@ class Brain:
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as exc:
-                log.error("Qwen3 error (%s): %s — falling back to smart.", type(exc).__name__, exc)
+                log.error("Qwen3 error (%s): %s — falling back to Groq.", type(exc).__name__, exc)
+                if self._client:
+                    return self._raw_groq(messages)
                 return self._fallback_to_core(messages)
 
     def _fallback_to_core(self, messages: list[dict]) -> str:
