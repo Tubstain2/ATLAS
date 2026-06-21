@@ -16,7 +16,7 @@ def execute(query: str, context: dict) -> str:
     topics = config.get("news_topics", ["technology", "world"])
 
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
         results = []
         with DDGS() as ddgs:
             for topic in topics[:2]:

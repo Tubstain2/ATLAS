@@ -270,7 +270,7 @@ end tell
     def _gen_news(self) -> str:
         topics = self._cfg.get("news_topics", ["technology", "world"])
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             headlines = []
             with DDGS() as ddgs:
                 for topic in topics[:1]:

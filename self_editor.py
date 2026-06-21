@@ -278,19 +278,21 @@ class TestRunner:
                 return TestResult(passed=True, message="No test files found.")
             files = [str(f) for f in all_tests]
 
-        # Try pytest first
-        try:
-            r = subprocess.run(
-                [
-                    sys.executable, "-m", "pytest",
-                    "-x", "-q", "--tb=short",
-                    f"--timeout={max(10, timeout - 15)}",
-                    *files,
-                ],
+        # Try pytest first (with timeout plugin if available, without if not)
+        def _run_pytest(extra_args: list) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, "-m", "pytest", "-x", "-q", "--tb=short",
+                 *extra_args, *files],
                 capture_output=True, text=True,
                 timeout=timeout,
                 cwd=str(project_root),
             )
+
+        try:
+            r = _run_pytest([f"--timeout={max(10, timeout - 15)}"])
+            # If --timeout flag was rejected (pytest-timeout not installed), retry without it
+            if r.returncode != 0 and "unrecognized arguments" in (r.stdout + r.stderr):
+                r = _run_pytest([])
             output = (r.stdout + r.stderr).strip()
             return TestResult(passed=(r.returncode == 0), message=output[-2_000:])
         except subprocess.TimeoutExpired:

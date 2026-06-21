@@ -27,7 +27,7 @@ def execute(query: str, context: dict) -> str:
         return "What would you like me to search for, Boss?"
 
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
         results = []
         with DDGS() as ddgs:
             for r in ddgs.text(search_term, max_results=3):

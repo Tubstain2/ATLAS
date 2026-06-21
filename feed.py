@@ -375,7 +375,7 @@ class FeedManager(QObject):
 
     def _fetch_news(self) -> list[str]:
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             topics  = self._cfg.get("news_topics", ["technology", "world"])
             query   = " OR ".join(topics)
             results = list(DDGS().news(query, max_results=6))

@@ -301,7 +301,7 @@ class ShazamModule:
         title  = self._last_result.get("title", "")
         artist = self._last_result.get("artist", "")
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             results = list(DDGS().text(
                 f"{title} {artist} lyrics", max_results=3
             ))

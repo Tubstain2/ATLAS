@@ -848,7 +848,8 @@ class ShellExecutor:
             )
             output = (result.stdout + result.stderr).strip()
             if not output:
-                output = "" if result.returncode == 0 else f"Command failed (exit {result.returncode})."
+                output = (f"Done (exit code {result.returncode})." if result.returncode == 0
+                          else f"Command failed (exit code {result.returncode}).")
             elif len(output) > _MAX_OUTPUT_CHARS:
                 output = output[:_MAX_OUTPUT_CHARS] + "\n[…output truncated…]"
             log.info("Shell: %r → exit %d", cmd[:60], result.returncode)
@@ -972,6 +973,7 @@ class ControlModule:
         "open this link", "open the article", "start a new",
         "close enough", "quit smoking", "start fresh",
         "search for meaning", "find file in code",
+        "play music",  # Spotify command, not system control
     })
 
     def __init__(self, config: dict):

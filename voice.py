@@ -778,7 +778,10 @@ class PiperTTS:
     """
 
     def __init__(self, voice: str = _DEFAULT_VOICE, speech_rate: float = 1.0,
-                 voice_enabled: bool = True):
+                 voice_enabled: bool = True,
+                 length_scale: Optional[float] = None,
+                 noise_scale: Optional[float] = None,
+                 noise_w: Optional[float] = None):
         self._voice         = voice
         self._piper         = None
         self._pyttsx3       = None
@@ -791,10 +794,10 @@ class PiperTTS:
                                if voice in _AVAILABLE_VOICES else 0)
         self._phrase_cache  = _PhraseCache(maxsize=20)
 
-        # Quality settings — JARVIS defaults; overridden per non-JARVIS voice
-        self._length_scale  = _JARVIS_LENGTH_SCALE
-        self._noise_scale   = _JARVIS_NOISE_SCALE
-        self._noise_w       = _JARVIS_NOISE_W
+        # Quality settings — config overrides JARVIS defaults
+        self._length_scale  = length_scale if length_scale is not None else _JARVIS_LENGTH_SCALE
+        self._noise_scale   = noise_scale  if noise_scale  is not None else _JARVIS_NOISE_SCALE
+        self._noise_w       = noise_w      if noise_w      is not None else _JARVIS_NOISE_W
 
     # ── Initialization ────────────────────────────────────────────────────────
 
@@ -1117,6 +1120,9 @@ class VoiceWorker(QThread):
             voice=self._tts_voice,
             speech_rate=vc.get("speech_rate", 1.0),
             voice_enabled=vc.get("voice_enabled", True),
+            length_scale=vc.get("voice_length_scale"),
+            noise_scale=vc.get("voice_noise_scale"),
+            noise_w=vc.get("voice_noise_w"),
         )
 
     # ── Adaptive noise calibration ────────────────────────────────────────────

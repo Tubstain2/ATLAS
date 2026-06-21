@@ -119,6 +119,8 @@ class Brain:
         self._user_name  = config.get("user_name", "Boss")
         self._system     = _build_system(self._user_name)
         self._max_tokens = brain_cfg.get("max_tokens", 1024)
+        core_cfg         = config.get("core", {})
+        self._timeout    = float(core_cfg.get("response_timeout", 25))
 
         self._history: list[dict] = []
         self._max_history  = 40        # 20 turns × 2
@@ -414,7 +416,7 @@ class Brain:
                     model="gemini-2.0-flash",
                     messages=full_messages,
                     max_tokens=self._max_tokens,
-                    timeout=25.0,
+                    timeout=self._timeout,
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as exc:
@@ -431,7 +433,7 @@ class Brain:
                     model=self._model,
                     messages=full_messages,
                     max_tokens=self._max_tokens,
-                    timeout=25.0,
+                    timeout=self._timeout,
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as exc:
@@ -454,7 +456,7 @@ class Brain:
                     model=model,
                     messages=full_messages,
                     max_tokens=self._max_tokens,
-                    timeout=30.0,
+                    timeout=max(self._timeout, 30.0),
                 )
                 return resp.choices[0].message.content.strip()
             except Exception as exc:
