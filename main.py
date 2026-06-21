@@ -329,6 +329,24 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
     brain._handle_meta = _meta_with_sounds
 
+    # ── Chrome control ────────────────────────────────────────────────────────
+    chrome = None
+    try:
+        from chrome_control import ChromeControl as _ChromeCtrl
+        chrome = _ChromeCtrl(config, speak_cb=vm.speak, brain=brain)
+        core.set_chrome_control(chrome)
+
+        def _bg_connect_chrome():
+            import threading
+            def _run():
+                ok = chrome.connect()
+                log.info("ChromeControl: %s", "Playwright connected" if ok else "using AppleScript fallback")
+            threading.Thread(target=_run, daemon=True, name="atlas-chrome-init").start()
+
+        QTimer.singleShot(4000, _bg_connect_chrome)
+    except Exception as _chrome_err:
+        log.warning("ChromeControl unavailable: %s", _chrome_err)
+
     # ── Screen vision ─────────────────────────────────────────────────────────
     vision = VisionModule(config, brain=brain)
     vision.set_speak_callback(vm.speak)
@@ -462,6 +480,7 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     window._self_improve   = engine
     window._spotify        = spotify
     window._dashboard      = dash
+    window._chrome         = chrome
     window._vision         = vision
     window._overlay        = overlay
     window._skills         = skills
@@ -480,6 +499,8 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
         app.aboutToQuit.connect(sounds.stop)
         app.aboutToQuit.connect(skills.stop)
         app.aboutToQuit.connect(digest.stop)
+        if chrome is not None:
+            app.aboutToQuit.connect(lambda: chrome._cmd_q.put(None))
 
 
 def _handle_feed_command(text: str, window: ATLASMainWindow, feed_mgr: FeedManager):
