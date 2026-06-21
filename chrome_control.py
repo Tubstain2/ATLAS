@@ -81,9 +81,16 @@ class ChromeControl:
         self._pw      = None   # Playwright instance
         self._browser = None   # CDP-connected browser
         self._page    = None   # active page shortcut
+        self._context = None   # persistent context (when not using CDP)
 
         self._pending_submit       = False
         self._pending_close_others = False
+
+        # Worker thread — all Playwright calls must run in this thread
+        import queue as _q
+        self._cmd_q:    _q.Queue = _q.Queue()
+        self._worker:   object   = None
+        self._ready:    bool     = False
 
         if self._enabled:
             log.info("ChromeControl ready (port %d). Call connect() to attach to Chrome.",
@@ -92,83 +99,198 @@ class ChromeControl:
     # ── Connection ─────────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
-        """Connect Playwright to Chrome's CDP endpoint. Returns True on success."""
+        """
+        Connect Playwright to Chrome via a persistent worker thread.
+
+        All Playwright objects live in that thread — Playwright's greenlet-based
+        sync API cannot cross thread boundaries, so every subsequent call is
+        dispatched through _cmd_q to the worker.
+
+        Tries three strategies in order:
+          1. CDP to existing Chrome on debug port (fastest)
+          2. launch_persistent_context with real Chrome profile (uses cookies/logins)
+          3. Fresh Chromium (no logins, last resort)
+        """
         if not self._enabled:
             return False
+
+        import threading, queue as _q
+        ready_q: _q.Queue = _q.Queue()
+        self._worker = threading.Thread(
+            target=self._worker_loop, args=(ready_q,),
+            daemon=True, name="atlas-chrome-worker",
+        )
+        self._worker.start()
         try:
-            from playwright.sync_api import sync_playwright
-            p       = sync_playwright().start()
-            browser = p.chromium.connect_over_cdp(f"http://localhost:{self._debug_port}")
-            self._pw      = p
-            self._browser = browser
-            pages = self._all_pages()
-            self._page = pages[0] if pages else None
-            log.info("ChromeControl: connected to Chrome (%d pages open).", len(pages))
-            return True
-        except Exception as exc:
-            log.warning("ChromeControl: could not connect to Chrome (%s).", exc)
-            if self._auto_relaunch:
-                log.info("ChromeControl: relaunching Chrome with debug flag…")
-                self._relaunch_chrome()
-                return self._connect_once()
+            return ready_q.get(timeout=30)
+        except _q.Empty:
+            log.error("ChromeControl: worker thread timed out after 30s.")
             return False
 
-    def _connect_once(self) -> bool:
-        """Single retry after relaunch."""
+    def _worker_loop(self, ready_q) -> None:
+        """Persistent Playwright thread — initialises once, then services _cmd_q forever."""
+        import asyncio, queue as _q
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            connected = (self._try_cdp() or
+                         self._try_persistent_context() or
+                         self._try_fresh_browser())
+            ready_q.put(connected)
+            if not connected:
+                return
+            while True:
+                try:
+                    item = self._cmd_q.get(timeout=1.0)
+                    if item is None:       # stop sentinel
+                        break
+                    fn, result_q = item
+                    try:
+                        result_q.put(("ok", fn()))
+                    except Exception as exc:
+                        result_q.put(("err", exc))
+                except _q.Empty:
+                    continue
+        finally:
+            if loop and not loop.is_closed():
+                loop.close()
+
+    def _try_cdp(self) -> bool:
+        p = None
         try:
             from playwright.sync_api import sync_playwright
-            p       = sync_playwright().start()
-            browser = p.chromium.connect_over_cdp(f"http://localhost:{self._debug_port}")
-            self._pw      = p
-            self._browser = browser
+            p = sync_playwright().start()
+            browser = p.chromium.connect_over_cdp(
+                f"http://localhost:{self._debug_port}", timeout=3000
+            )
+            self._pw, self._browser = p, browser
             pages = self._all_pages()
             self._page = pages[0] if pages else None
-            log.info("ChromeControl: reconnected (%d pages).", len(pages))
+            log.info("ChromeControl: connected via CDP (%d pages).", len(pages))
             return True
         except Exception as exc:
-            log.error("ChromeControl: retry failed: %s", exc)
+            log.debug("CDP connect failed: %s", exc)
+            if p is not None:
+                try:
+                    p.stop()
+                except Exception:
+                    pass
+            return False
+
+    def _try_persistent_context(self) -> bool:
+        """Launch Chrome with the user's real profile — preserves cookies and logins.
+
+        Called directly from _worker_loop, so no inner thread needed.
+        """
+        import pathlib
+        p = None
+        try:
+            from playwright.sync_api import sync_playwright
+            user_data = str(pathlib.Path.home() / "Library/Application Support/Google/Chrome")
+            p = sync_playwright().start()
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=user_data,
+                channel="chrome",
+                headless=False,
+                args=["--no-first-run", "--no-default-browser-check"],
+                timeout=15000,
+            )
+            self._pw = p
+            self._browser = None
+            self._context = context
+            self._page = context.pages[0] if context.pages else context.new_page()
+            log.info("ChromeControl: persistent context ready (real Chrome profile).")
+            return True
+        except Exception as exc:
+            log.warning("Persistent context failed: %s", exc)
+            if p is not None:
+                try:
+                    p.stop()
+                except Exception:
+                    pass
+            return False
+
+    def _try_fresh_browser(self) -> bool:
+        try:
+            from playwright.sync_api import sync_playwright
+            p = sync_playwright().start()
+            browser = p.chromium.launch(headless=False)
+            self._pw, self._browser = p, browser
+            context = browser.new_context()
+            self._context = context
+            self._page = context.new_page()
+            log.info("ChromeControl: fresh Chromium ready (no user profile).")
+            return True
+        except Exception as exc:
+            log.error("Fresh browser failed: %s", exc)
             return False
 
     def _relaunch_chrome(self) -> None:
+        import os, signal as _signal
+        # Force-kill all Chrome processes (osascript quit can leave singletons)
         try:
-            subprocess.run(
-                ["osascript", "-e", 'quit app "Google Chrome"'],
-                timeout=5, check=False,
-            )
+            result = subprocess.run(["pgrep", "-f", "Google Chrome"],
+                                    capture_output=True, text=True)
+            for pid in result.stdout.strip().splitlines():
+                try:
+                    os.kill(int(pid), _signal.SIGKILL)
+                except (ProcessLookupError, ValueError):
+                    pass
         except Exception:
             pass
-        time.sleep(1.5)
+        time.sleep(2.0)
+
+        # Remove singleton lock files left by SIGKILL
+        import pathlib
+        chrome_data = pathlib.Path.home() / "Library/Application Support/Google/Chrome"
+        for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            (chrome_data / lock).unlink(missing_ok=True)
+
         try:
             subprocess.Popen([
                 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                 f"--remote-debugging-port={self._debug_port}",
+                f"--remote-allow-origins=http://localhost:{self._debug_port}",
                 "--no-first-run",
                 "--no-default-browser-check",
             ])
         except FileNotFoundError:
             log.error("Chrome not found at /Applications/Google Chrome.app")
-        time.sleep(2.0)
+        time.sleep(3.0)
 
     def _connected(self) -> bool:
-        return self._browser is not None
+        return self._page is not None
 
     def _active_page(self):
-        if not self._connected():
-            return None
         try:
             pages = self._all_pages()
-            return pages[-1] if pages else None
+            return pages[-1] if pages else self._page
         except Exception:
-            return None
+            return self._page
 
     def _all_pages(self) -> list:
         pages = []
         try:
-            for ctx in self._browser.contexts:
-                pages.extend(ctx.pages)
+            # Persistent context stores pages directly on self._context
+            if hasattr(self, "_context") and self._context is not None:
+                pages.extend(self._context.pages)
+            elif self._browser is not None:
+                for ctx in self._browser.contexts:
+                    pages.extend(ctx.pages)
         except Exception:
             pass
         return pages
+
+    def _new_page(self):
+        """Open a new page in the current context."""
+        try:
+            if hasattr(self, "_context") and self._context is not None:
+                return self._context.new_page()
+            if self._browser is not None:
+                return self._browser.contexts[0].new_page()
+        except Exception as exc:
+            log.error("Could not open new page: %s", exc)
+        return None
 
     # ── AppleScript fallback ───────────────────────────────────────────────────
 
@@ -188,6 +310,26 @@ class ChromeControl:
         if not self._enabled:
             return None
 
+        # If the Playwright worker thread is alive, all Playwright objects live
+        # there — dispatch into it via _cmd_q so greenlets stay in their thread.
+        if self._worker is not None and self._worker.is_alive():
+            import queue as _q
+            result_q: _q.Queue = _q.Queue()
+            self._cmd_q.put((lambda t=text: self._dispatch(t), result_q))
+            try:
+                status, value = result_q.get(timeout=15.0)
+                if status == "err":
+                    log.error("ChromeControl dispatch error: %s", value)
+                    return f"Chrome control error: {value}"
+                return value
+            except _q.Empty:
+                log.error("ChromeControl: dispatch timed out")
+                return None
+        # Fallback: direct (not connected yet or worker exited)
+        return self._dispatch(text)
+
+    def _dispatch(self, text: str) -> Optional[str]:
+        """Command matching — runs inside the Playwright worker thread."""
         lower = text.lower().strip()
         # Strip "atlas " prefix for matching
         clean = re.sub(r"^atlas\s+", "", lower)
@@ -337,8 +479,7 @@ class ChromeControl:
             return self._applescript_open(url)
         if not page:
             try:
-                ctx  = self._browser.contexts[0]
-                page = ctx.new_page()
+                page = self._new_page()
             except Exception:
                 return self._applescript_open(url)
         try:
@@ -352,10 +493,10 @@ class ChromeControl:
         if not self._connected():
             return self._no_chrome()
         try:
-            ctx  = self._browser.contexts[0]
-            page = ctx.new_page()
-            page.goto("about:blank")
-            self._page = page
+            page = self._new_page()
+            if page:
+                page.goto("about:blank")
+                self._page = page
             return "New tab opened."
         except Exception as exc:
             return f"Couldn't open new tab: {exc}"
@@ -764,7 +905,8 @@ class ChromeControl:
                 f"❌ Chrome not on port {self._debug_port} — "
                 f"quit Chrome and relaunch with: "
                 f"'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome "
-                f"--remote-debugging-port={self._debug_port}'"
+                f"--remote-debugging-port={self._debug_port} "
+                f"--remote-allow-origins=http://localhost:{self._debug_port}'"
             )
             if self._auto_relaunch:
                 lines.append("   (ATLAS will auto-relaunch Chrome when chrome_control.connect() is called)")
