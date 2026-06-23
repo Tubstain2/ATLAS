@@ -11,3 +11,35 @@ dist/
 *.log
 changelog.json
 .atlas_backups/
+
+# Reference repos (cloned for reading patterns — not ATLAS source)
+deer-flow/
+smolagents/
+agenticseek/
+pipecat/
+hermes-agent-main/
+
+# Personal vault data (Obsidian notes, daily logs, memory)
+ATLAS/
+memory/
+conversations/
+context/
+
+# Temp / scratch files
+tmplcg6a673.py
+*.tmp
+
+# Secrets
+*.key
+*.pem
+
+# Model weights (large binaries)
+*.onnx
+*.bin
+*.safetensors
+*.gguf
+
+# Python venvs
+.venv/
+venv/
+env/

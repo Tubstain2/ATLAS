@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATLAS</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #050810;
+  --blue:        #00CFFF;
+  --blue-dim:    rgba(0,180,220,0.35);
+  --blue-glow:   rgba(0,180,220,0.12);
+  --text:        rgba(200,235,255,0.88);
+  --text-dim:    rgba(140,190,220,0.45);
+  --text-faint:  rgba(100,160,200,0.25);
+  --border:      rgba(0,180,220,0.14);
+  --sidebar-w:   290px;
+  --font-mono:   'Share Tech Mono','Menlo','Courier New',monospace;
+  --font-ui:     -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* dot grid */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: radial-gradient(circle, rgba(0,180,220,0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Title bar (drag region) ──────────────────────────────────────────── */
+#titlebar {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 38px;
+  -webkit-app-region: drag;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px;
+  z-index: 100;
+}
+.traffic {
+  display: flex; gap: 7px;
+  -webkit-app-region: no-drag;
+}
+.traffic-btn {
+  width: 12px; height: 12px; border-radius: 50%; border: none;
+  cursor: pointer; opacity: 0.75; transition: opacity 0.15s;
+  background: rgba(0,180,220,0.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.traffic-btn:hover { opacity: 1; }
+.traffic-btn.close  { background: #FF5F57; }
+.traffic-btn.min    { background: #FFBD2E; }
+.traffic-btn.full   { background: #27C93F; }
+
+.titlebar-right {
+  display: flex; align-items: center; gap: 10px;
+  -webkit-app-region: no-drag;
+}
+
+/* icon buttons (camera, sidebar toggle) */
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: none;
+  background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); transition: color 0.2s, background 0.2s;
+}
+.icon-btn:hover { color: var(--blue); background: rgba(0,180,220,0.08); }
+.icon-btn.active { color: var(--blue); }
+
+.camera-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint); margin-left: -4px; margin-top: -10px;
+  transition: background 0.3s;
+}
+.camera-dot.live { background: #27C93F; box-shadow: 0 0 6px #27C93F; }
+
+/* ── Main layout ──────────────────────────────────────────────────────── */
+#main {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 1;
+  transition: right 0.3s ease;
+}
+#main.sidebar-open { right: var(--sidebar-w); }
+
+/* ── Orb area ─────────────────────────────────────────────────────────── */
+#orb-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0;
+  margin-top: -20px;
+}
+
+#orb-canvas {
+  width: 320px; height: 320px;
+  display: block;
+}
+
+#orb-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.35em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+#clock {
+  font-family: var(--font-mono);
+  font-size: 42px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  margin-top: 10px;
+  line-height: 1;
+}
+
+#date-str {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: var(--text-faint);
+  margin-top: 5px;
+  text-transform: uppercase;
+}
+
+#state-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--text-faint);
+  margin-top: 14px;
+  min-height: 16px;
+  transition: color 0.3s;
+}
+
+/* ── Transcript strip (bottom) ────────────────────────────────────────── */
+#transcript-wrap {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex; flex-direction: column;
+  align-items: center;
+  padding-bottom: 12px;
+  z-index: 10;
+  pointer-events: none;
+  transition: right 0.3s ease;
+}
+#transcript-wrap.sidebar-open { right: var(--sidebar-w); }
+
+#transcript {
+  width: 100%; max-width: 680px;
+  display: flex; flex-direction: column;
+  gap: 2px;
+  padding: 0 20px;
+}
+
+.tx-line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  opacity: 1;
+  transition: opacity 1.5s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tx-line.faded { opacity: 0; }
+.tx-line.atlas-line { color: var(--blue-dim); }
+.tx-line .tx-label { color: var(--text-faint); margin-right: 6px; }
+
+/* text input */
+#input-bar {
+  width: 100%; max-width: 680px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 20px 0;
+  pointer-events: all;
+}
+#text-input {
+  flex: 1;
+  background: rgba(0,180,220,0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 12px;
+  outline: none;
+  resize: none;
+  height: 34px;
+  transition: border-color 0.2s;
+}
+#text-input:focus { border-color: rgba(0,180,220,0.35); }
+#text-input::placeholder { color: var(--text-faint); }
+#send-btn {
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); transition: color 0.2s, border-color 0.2s;
+}
+#send-btn:hover { color: var(--blue); border-color: rgba(0,180,220,0.4); }
+
+/* ── Right sidebar ────────────────────────────────────────────────────── */
+#sidebar {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: rgba(5,8,18,0.92);
+  border-left: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  z-index: 50;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  padding: 48px 0 16px;
+}
+#sidebar.visible { transform: translateX(0); }
+
+.sidebar-section {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(0,180,220,0.06);
+}
+.sidebar-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── NOW PLAYING widget ───────────────────────────────────────────────── */
+#np-nothing-s {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+#np-content-s { display: none; }
+#np-title-s {
+  font-size: 13px; font-weight: 500;
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#np-artist-s {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-bars { display: flex; gap: 2px; margin-top: 6px; align-items: flex-end; height: 14px; }
+.wf-bar {
+  width: 3px; background: var(--blue-dim); border-radius: 2px;
+  animation: none; transition: height 0.2s;
+}
+.wf-bar.playing { animation: wf-pulse 0.8s ease-in-out infinite; }
+.wf-bar:nth-child(1) { height: 6px; animation-delay: 0s; }
+.wf-bar:nth-child(2) { height: 10px; animation-delay: 0.12s; }
+.wf-bar:nth-child(3) { height: 14px; animation-delay: 0.24s; }
+.wf-bar:nth-child(4) { height: 8px; animation-delay: 0.08s; }
+.wf-bar:nth-child(5) { height: 12px; animation-delay: 0.16s; }
+@keyframes wf-pulse {
+  0%,100% { opacity: 0.4; transform: scaleY(0.5); }
+  50%      { opacity: 1.0; transform: scaleY(1.0); }
+}
+#np-progress-s {
+  height: 2px; background: rgba(0,180,220,0.12);
+  border-radius: 1px; margin-top: 8px;
+}
+#np-fill-s { height: 100%; width: 0%; background: var(--blue-dim); border-radius: 1px; transition: width 1s linear; }
+.np-times { display: flex; justify-content: space-between; margin-top: 3px;
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-faint); }
+
+/* ── WEATHER widget ───────────────────────────────────────────────────── */
+#weather-val {
+  font-family: var(--font-mono); font-size: 28px; color: var(--text);
+  margin-bottom: 2px;
+}
+#weather-desc {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+.weather-row { display: flex; gap: 14px; margin-top: 8px; }
+.weather-stat { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+.weather-stat span { color: var(--text-dim); }
+
+/* ── SYSTEM stats ─────────────────────────────────────────────────────── */
+.stat-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.stat-name { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); letter-spacing: 0.1em; }
+.stat-bar { flex: 1; height: 3px; background: rgba(0,180,220,0.1); border-radius: 2px; margin: 0 10px; }
+.stat-fill { height: 100%; border-radius: 2px; background: var(--blue-dim); transition: width 0.6s ease; }
+.stat-val { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); min-width: 30px; text-align: right; }
+
+/* ── NEWS feed ────────────────────────────────────────────────────────── */
+#feed-items {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 200px; overflow-y: auto;
+}
+#feed-items::-webkit-scrollbar { width: 2px; }
+#feed-items::-webkit-scrollbar-thumb { background: var(--border); border-radius: 1px; }
+.feed-item {
+  font-size: 11px; line-height: 1.4; color: var(--text-dim);
+  padding-left: 8px;
+  border-left: 2px solid rgba(0,180,220,0.2);
+}
+.fi-ts { font-family: var(--font-mono); font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+
+/* ── OBSIDIAN / REMINDERS ────────────────────────────────────────────── */
+.obs-item, .rem-item {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  padding: 3px 0; border-bottom: 1px solid rgba(0,180,220,0.04);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── TOAST ────────────────────────────────────────────────────────────── */
+#toast {
+  position: fixed; top: 48px; left: 50%; transform: translateX(-50%) translateY(-6px);
+  background: rgba(5,8,18,0.92); border: 1px solid var(--border);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-radius: 8px; padding: 8px 18px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 200;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── SETTINGS overlay ────────────────────────────────────────────────── */
+#settings-overlay {
+  position: fixed; inset: 0; background: rgba(3,5,14,0.75);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center;
+  z-index: 300;
+}
+#settings-overlay.open { display: flex; }
+#settings-panel {
+  background: rgba(6,8,20,0.96); border: 1px solid var(--border);
+  border-radius: 12px; padding: 28px 32px; width: 360px;
+  font-family: var(--font-mono);
+}
+.settings-title {
+  font-size: 11px; letter-spacing: 0.3em; color: var(--text-faint);
+  text-transform: uppercase; margin-bottom: 20px;
+}
+.settings-close {
+  float: right; background: none; border: none;
+  cursor: pointer; color: var(--text-dim); font-size: 16px;
+  margin-top: -4px;
+}
+
+/* scrollbar global */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-thumb { background: rgba(0,180,220,0.15); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ── Title bar ─────────────────────────────────────────────────────────── -->
+<div id="titlebar">
+  <div class="traffic">
+    <button class="traffic-btn close"  onclick="atlasClose()"></button>
+    <button class="traffic-btn min"    onclick="atlasMinimise()"></button>
+    <button class="traffic-btn full"   onclick="atlasFullscreen()"></button>
+  </div>
+  <div class="titlebar-right">
+    <!-- Camera toggle -->
+    <div style="position:relative; display:flex; align-items:center;">
+      <button class="icon-btn" id="cam-btn" onclick="toggleCamera()" title="Toggle camera">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M1 4.5A1.5 1.5 0 0 1 2.5 3h7A1.5 1.5 0 0 1 11 4.5v7A1.5 1.5 0 0 1 9.5 13h-7A1.5 1.5 0 0 1 1 11.5v-7z" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M11 6.5l3-2v7l-3-2V6.5z" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+      </button>
+      <div class="camera-dot" id="cam-dot"></div>
+    </div>
+    <!-- Sidebar toggle -->
+    <button class="icon-btn" id="sidebar-btn" onclick="toggleSidebar()" title="Widgets">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <rect x="1" y="2" width="13" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="1" y="6.75" width="13" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="1" y="11.5" width="13" height="1.5" rx="0.75" fill="currentColor"/>
+      </svg>
+    </button>
+    <!-- Settings -->
+    <button class="icon-btn" onclick="openSettings()" title="Settings">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <circle cx="7.5" cy="7.5" r="2" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.93 2.93l1.06 1.06M11.01 11.01l1.06 1.06M2.93 12.07l1.06-1.06M11.01 3.99l1.06-1.06" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── Main: orb + clock ──────────────────────────────────────────────────── -->
+<div id="main">
+  <div id="orb-wrap">
+    <canvas id="orb-canvas" width="320" height="320"></canvas>
+    <div id="orb-name">A T L A S</div>
+    <div id="clock">00:00</div>
+    <div id="date-str">–</div>
+    <div id="state-label">[ READY ]</div>
+  </div>
+</div>
+
+<!-- ── Transcript + input (bottom) ───────────────────────────────────────── -->
+<div id="transcript-wrap">
+  <div id="transcript"></div>
+  <div id="input-bar">
+    <input id="text-input" type="text" placeholder="ask atlas something…"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"/>
+    <button id="send-btn" onclick="sendMessage()">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M12.5 7L2 2l2.5 5L2 12l10.5-5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── Right sidebar ──────────────────────────────────────────────────────── -->
+<div id="sidebar">
+
+  <!-- Now Playing -->
+  <div class="sidebar-section" id="now-playing-widget">
+    <div class="sidebar-label">Now Playing</div>
+    <div id="np-nothing-s">[ NO SIGNAL ]</div>
+    <div id="np-content-s">
+      <div id="np-title-s">—</div>
+      <div id="np-artist-s">—</div>
+      <div class="wf-bars">
+        <div class="wf-bar"></div><div class="wf-bar"></div>
+        <div class="wf-bar"></div><div class="wf-bar"></div><div class="wf-bar"></div>
+      </div>
+      <div id="np-progress-s"><div id="np-fill-s"></div></div>
+      <div class="np-times"><span id="np-el-s">0:00</span><span id="np-tot-s">0:00</span></div>
+    </div>
+  </div>
+
+  <!-- Weather -->
+  <div class="sidebar-section" id="weather-widget">
+    <div class="sidebar-label">Weather</div>
+    <div id="weather-val">—°</div>
+    <div id="weather-desc">—</div>
+    <div class="weather-row">
+      <div class="weather-stat">HUM <span id="weather-hum">—</span></div>
+      <div class="weather-stat">WIND <span id="weather-wind">—</span></div>
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="sidebar-section" id="system-widget">
+    <div class="sidebar-label">System</div>
+    <div class="stat-row">
+      <div class="stat-name">CPU</div>
+      <div class="stat-bar"><div class="stat-fill" id="s-cpu-bar" style="width:0%"></div></div>
+      <div class="stat-val" id="s-cpu">—</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-name">RAM</div>
+      <div class="stat-bar"><div class="stat-fill" id="s-ram-bar" style="width:0%"></div></div>
+      <div class="stat-val" id="s-ram">—</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-name">NET</div>
+      <div class="stat-bar"><div class="stat-fill" id="s-dsk-bar" style="width:0%"></div></div>
+      <div class="stat-val" id="s-dsk">—</div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-name">BAT</div>
+      <div class="stat-bar"><div class="stat-fill" id="s-bat-bar" style="width:0%"></div></div>
+      <div class="stat-val" id="s-bat">—</div>
+    </div>
+  </div>
+
+  <!-- News / Feed -->
+  <div class="sidebar-section">
+    <div class="sidebar-label">Live Feed</div>
+    <div id="feed-items"></div>
+  </div>
+
+  <!-- Obsidian -->
+  <div class="sidebar-section" id="obsidian-widget">
+    <div class="sidebar-label">Obsidian</div>
+    <div id="obs-content">
+      <div class="obs-item" id="obs-note">—</div>
+    </div>
+  </div>
+
+  <!-- Reminders -->
+  <div class="sidebar-section" id="reminders-widget">
+    <div class="sidebar-label">Reminders</div>
+    <div id="rem-list"></div>
+  </div>
+
+</div>
+
+<!-- ── Toast ──────────────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ── Settings overlay ───────────────────────────────────────────────────── -->
+<div id="settings-overlay">
+  <div id="settings-panel">
+    <div class="settings-title">Settings
+      <button class="settings-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div style="font-size:12px; color:var(--text-dim); line-height:1.8;">
+      Voice, model, and system settings are managed in <code style="color:var(--blue)">config.yaml</code>.
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATLAS UI — JARVIS-STYLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Clock ──────────────────────────────────────────────────────────────── */
+var _DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var _MONTHS= ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function _tick() {
+  var d = new Date();
+  var hh = String(d.getHours()).padStart(2,'0');
+  var mm = String(d.getMinutes()).padStart(2,'0');
+  document.getElementById('clock').textContent = hh + ':' + mm;
+  document.getElementById('date-str').textContent =
+    _DAYS[d.getDay()].toUpperCase() + ' · ' +
+    String(d.getDate()).padStart(2,'0') + ' ' + _MONTHS[d.getMonth()].toUpperCase() + ' ' + d.getFullYear();
+}
+_tick();
+setInterval(_tick, 1000);
+
+function nowTime() {
+  var d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+/* ── Orb canvas ─────────────────────────────────────────────────────────── */
+var _cvs    = document.getElementById('orb-canvas');
+var _ctx    = _cvs.getContext('2d');
+var _amp    = 0;
+var _orbState = 'idle';
+var _orbT   = 0;
+
+var _STATE_COLORS = {
+  idle:       { r:0,  g:150, b:200, a:0.55 },
+  listening:  { r:0,  g:200, b:255, a:0.85 },
+  thinking:   { r:100,g:80,  b:255, a:0.75 },
+  responding: { r:0,  g:200, b:255, a:0.90 },
+  detecting:  { r:0,  g:220, b:160, a:0.75 },
+};
+var _curColor = { r:0, g:150, b:200, a:0.55 };
+
+function _lerpC(a,b,t){
+  return { r:a.r+(b.r-a.r)*t, g:a.g+(b.g-a.g)*t,
+           b:a.b+(b.b-a.b)*t, a:a.a+(b.a-a.a)*t };
+}
+
+function _drawOrb() {
+  var W=320, H=320, cx=W/2, cy=H/2;
+  _ctx.clearRect(0,0,W,H);
+
+  var target = _STATE_COLORS[_orbState] || _STATE_COLORS.idle;
+  _curColor  = _lerpC(_curColor, target, 0.04);
+  var c = _curColor;
+
+  // breathing multiplier
+  var breath = 1 + Math.sin(_orbT * 0.018) * 0.04;
+  var excite  = 1 + _amp * 0.22;
+  var R = 110 * breath * excite;
+
+  // outer glow rings
+  for(var i=3;i>0;i--){
+    var grad = _ctx.createRadialGradient(cx,cy,R*0.85*i*0.3,cx,cy,R*1.5*(0.5+i*0.2));
+    grad.addColorStop(0,'rgba('+c.r+','+c.g+','+c.b+','+(c.a*0.06*i)+')');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    _ctx.beginPath();
+    _ctx.arc(cx,cy,R*1.5*(0.5+i*0.2),0,Math.PI*2);
+    _ctx.fillStyle=grad;
+    _ctx.fill();
+  }
+
+  // main orb
+  var mainGrad = _ctx.createRadialGradient(cx-R*0.25,cy-R*0.2,R*0.05,cx,cy,R);
+  mainGrad.addColorStop(0,'rgba('+c.r+','+c.g+','+c.b+','+Math.min(c.a*1.15,1)+')');
+  mainGrad.addColorStop(0.5,'rgba('+c.r+','+c.g+','+c.b+','+(c.a*0.7)+')');
+  mainGrad.addColorStop(1,'rgba('+Math.round(c.r*0.4)+','+Math.round(c.g*0.4)+','+Math.round(c.b*0.5)+',0.08)');
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,R,0,Math.PI*2);
+  _ctx.fillStyle=mainGrad;
+  _ctx.fill();
+
+  // specular highlight
+  var specGrad = _ctx.createRadialGradient(cx-R*0.3,cy-R*0.3,0,cx-R*0.3,cy-R*0.3,R*0.55);
+  specGrad.addColorStop(0,'rgba(255,255,255,0.18)');
+  specGrad.addColorStop(1,'rgba(255,255,255,0)');
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,R,0,Math.PI*2);
+  _ctx.fillStyle=specGrad;
+  _ctx.fill();
+
+  // outer ring
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,R+2,0,Math.PI*2);
+  _ctx.strokeStyle='rgba('+c.r+','+c.g+','+c.b+','+(c.a*0.35)+')';
+  _ctx.lineWidth=1;
+  _ctx.stroke();
+
+  // rotating tick ring (outer)
+  var tickR = R + 18;
+  for(var k=0;k<36;k++){
+    var ang = (k/36)*Math.PI*2 + _orbT*0.008;
+    var len = (k%3===0) ? 7 : 3;
+    _ctx.beginPath();
+    _ctx.moveTo(cx+Math.cos(ang)*tickR, cy+Math.sin(ang)*tickR);
+    _ctx.lineTo(cx+Math.cos(ang)*(tickR+len), cy+Math.sin(ang)*(tickR+len));
+    _ctx.strokeStyle='rgba('+c.r+','+c.g+','+c.b+','+(k%3===0?c.a*0.55:c.a*0.2)+')';
+    _ctx.lineWidth=1;
+    _ctx.stroke();
+  }
+
+  // counter-rotating inner ring
+  var innerR = R - 20;
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,innerR,0,Math.PI*2);
+  _ctx.strokeStyle='rgba('+c.r+','+c.g+','+c.b+',0.08)';
+  _ctx.lineWidth=1;
+  _ctx.stroke();
+
+  // arc segment on inner ring
+  var arcStart = _orbT * -0.012;
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,innerR,arcStart,arcStart+Math.PI*0.6);
+  _ctx.strokeStyle='rgba('+c.r+','+c.g+','+c.b+','+(c.a*0.5)+')';
+  _ctx.lineWidth=1.5;
+  _ctx.stroke();
+
+  // amplitude ripples
+  if(_amp > 0.05){
+    for(var ri=1;ri<=3;ri++){
+      var rph = (_orbT*0.04+ri*0.3)%(1);
+      var rr  = R*(1+rph*0.5);
+      _ctx.beginPath();
+      _ctx.arc(cx,cy,rr,0,Math.PI*2);
+      _ctx.strokeStyle='rgba('+c.r+','+c.g+','+c.b+','+(_amp*(0.25-rph*0.25))+')';
+      _ctx.lineWidth=1;
+      _ctx.stroke();
+    }
+  }
+
+  // center dot
+  _ctx.beginPath();
+  _ctx.arc(cx,cy,3,0,Math.PI*2);
+  _ctx.fillStyle='rgba(255,255,255,0.6)';
+  _ctx.fill();
+
+  _orbT++;
+  requestAnimationFrame(_drawOrb);
+}
+_drawOrb();
+
+/* ── State & amplitude ──────────────────────────────────────────────────── */
+var _stateColors = {
+  idle:'var(--text-faint)', listening:'var(--blue)',
+  responding:'var(--blue)', thinking:'rgba(130,100,255,0.75)', detecting:'rgba(0,220,160,0.75)',
+};
+var _stateLabels = {
+  idle:'[ READY ]', listening:'[ LISTENING ]',
+  thinking:'[ THINKING ]', responding:'[ SPEAKING ]', detecting:'[ DETECTING ]',
+};
+
+function setState(s) {
+  _orbState = s;
+  var el = document.getElementById('state-label');
+  el.textContent = _stateLabels[s] || s.toUpperCase();
+  el.style.color  = _stateColors[s] || 'var(--text-faint)';
+}
+
+function setAmplitude(val) {
+  _amp = Math.max(0, Math.min(1, val));
+}
+
+function setModuleActive(name, active) { /* no-op in this layout */ }
+
+/* ── Transcript strip ───────────────────────────────────────────────────── */
+var _TX_MAX = 4;
+var _txLines = [];
+var _txFadeTimers = {};
+
+function _addTranscriptLine(who, text) {
+  var strip = document.getElementById('transcript');
+  var line  = document.createElement('div');
+  var isAtlas = (who === 'atlas');
+  line.className = 'tx-line' + (isAtlas ? ' atlas-line' : '');
+
+  var label = document.createElement('span');
+  label.className = 'tx-label';
+  label.textContent = isAtlas ? 'atlas:' : 'you:';
+  line.appendChild(label);
+  line.appendChild(document.createTextNode(text.length > 120 ? text.slice(0,120)+'…' : text));
+  strip.appendChild(line);
+  _txLines.push(line);
+
+  // keep max entries
+  while(_txLines.length > _TX_MAX) {
+    var old = _txLines.shift();
+    if(old.parentNode) old.parentNode.removeChild(old);
+  }
+
+  // auto-fade after 18s
+  var id = setTimeout(function(){ line.classList.add('faded'); }, 18000);
+  if(_txFadeTimers[line]) clearTimeout(_txFadeTimers[line]);
+  _txFadeTimers[line] = id;
+}
+
+function addEntry(text, isAtlas) {
+  _addTranscriptLine(isAtlas ? 'atlas' : 'user', text);
+}
+
+var _twTimer = null;
+var _twBuf   = '';
+
+function showResponse(text) {
+  if(_twTimer){ clearInterval(_twTimer); _twTimer=null; }
+  _twBuf = '';
+
+  var strip = document.getElementById('transcript');
+  var line  = document.createElement('div');
+  line.className = 'tx-line atlas-line';
+  var label = document.createElement('span');
+  label.className = 'tx-label'; label.textContent = 'atlas:';
+  line.appendChild(label);
+  var span = document.createElement('span');
+  line.appendChild(span);
+  strip.appendChild(line);
+  _txLines.push(line);
+  while(_txLines.length > _TX_MAX) {
+    var old = _txLines.shift();
+    if(old.parentNode) old.parentNode.removeChild(old);
+  }
+
+  var idx = 0;
+  _twTimer = setInterval(function(){
+    if(idx >= text.length){
+      clearInterval(_twTimer); _twTimer = null;
+      setState('idle');
+      var fid = setTimeout(function(){ line.classList.add('faded'); }, 18000);
+      _txFadeTimers[line] = fid;
+      return;
+    }
+    idx += 2;
+    var visible = text.slice(0,idx);
+    span.textContent = visible.length > 120 ? visible.slice(0,120)+'…' : visible;
+  }, 14);
+}
+
+function atlasTypewriter(text) { showResponse(text); }
+
+/* ── Text input → Python ────────────────────────────────────────────────── */
+function sendMessage() {
+  var inp = document.getElementById('text-input');
+  var text = inp.value.trim();
+  if(!text) return;
+  _addTranscriptLine('user', text);
+  inp.value = '';
+  setState('thinking');
+  document.title = 'atlas:query:' + text;
+  setTimeout(function(){ document.title = 'ATLAS'; }, 120);
+}
+
+/* ── Camera toggle ──────────────────────────────────────────────────────── */
+var _camOn = false;
+function toggleCamera() {
+  _camOn = !_camOn;
+  document.getElementById('cam-dot').className = 'camera-dot' + (_camOn ? ' live' : '');
+  document.getElementById('cam-btn').classList.toggle('active', _camOn);
+  document.title = _camOn ? 'atlas:camera:on' : 'atlas:camera:off';
+  setTimeout(function(){ document.title='ATLAS'; }, 120);
+  showToast(_camOn ? 'Camera on' : 'Camera off');
+}
+function setCameraState(on) {
+  _camOn = on;
+  document.getElementById('cam-dot').className = 'camera-dot' + (on ? ' live' : '');
+  document.getElementById('cam-btn').classList.toggle('active', on);
+}
+
+/* ── Sidebar toggle ─────────────────────────────────────────────────────── */
+var _sidebarOpen = false;
+function toggleSidebar() {
+  _sidebarOpen = !_sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('visible', _sidebarOpen);
+  document.getElementById('main').classList.toggle('sidebar-open', _sidebarOpen);
+  document.getElementById('transcript-wrap').classList.toggle('sidebar-open', _sidebarOpen);
+  document.getElementById('sidebar-btn').classList.toggle('active', _sidebarOpen);
+}
+function showFeed()   { if(!_sidebarOpen) toggleSidebar(); }
+function hideFeed()   { if(_sidebarOpen)  toggleSidebar(); }
+function toggleFeed() { toggleSidebar(); }
+
+/* ── Traffic light ──────────────────────────────────────────────────────── */
+function atlasClose()      { document.title='atlas:traffic:close'; setTimeout(function(){document.title='ATLAS';},120); }
+function atlasMinimise()   { document.title='atlas:traffic:min';   setTimeout(function(){document.title='ATLAS';},120); }
+function atlasFullscreen() { document.title='atlas:traffic:full';  setTimeout(function(){document.title='ATLAS';},120); }
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+var _toastTimer = null;
+function showToast(msg, kind) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show';
+  if(_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function(){ el.className=''; }, 2800);
+}
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+function openSettings()  { document.getElementById('settings-overlay').classList.add('open'); }
+function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+
+/* ── setNavActive (no-op in this layout) ───────────────────────────────── */
+function setNavActive(name) { /* no nav tabs */ }
+
+/* ── Feed ───────────────────────────────────────────────────────────────── */
+var _lastFeedItem = null;
+
+function addFeedItem(item) {
+  var container = document.getElementById('feed-items');
+  var el = document.createElement('div');
+  el.className = 'feed-item';
+  var ts  = document.createElement('div'); ts.className='fi-ts'; ts.textContent=nowTime();
+  el.textContent = item.content || '';
+  el.appendChild(ts);
+  container.appendChild(el);
+  _lastFeedItem = el;
+  var all = container.querySelectorAll('.feed-item');
+  if(all.length > 30) all[0].remove();
+  container.scrollTop = container.scrollHeight;
+}
+function clearFeed()   { document.getElementById('feed-items').innerHTML=''; }
+function setFeedMode() { /* no-op */ }
+function pinLastItem() { if(_lastFeedItem) _lastFeedItem.style.borderLeftColor='var(--blue)'; }
+
+/* ── Widget show/hide ───────────────────────────────────────────────────── */
+var _WIDGET_MAP = {
+  weather:'weather-widget', music:'now-playing-widget', spotify:'now-playing-widget',
+  system:'system-widget', obsidian:'obsidian-widget', reminders:'reminders-widget',
+};
+function hideWidget(n){ var id=_WIDGET_MAP[n]||(n+'-widget'), el=id&&document.getElementById(id); if(el)el.style.display='none'; }
+function showWidget(n){ var id=_WIDGET_MAP[n]||(n+'-widget'), el=id&&document.getElementById(id); if(el)el.style.display=''; }
+
+/* ── NOW PLAYING ─────────────────────────────────────────────────────────── */
+var _npPos=0,_npDur=0,_npPlaying=false,_npInterval=null;
+function fmtTime(s){ var m=Math.floor(s/60),sec=Math.floor(s%60); return m+':'+(sec<10?'0':'')+sec; }
+
+function updateSpotify(d) {
+  _npPlaying = !!(d && d.playing && d.track);
+  _npPos = (d&&d.position)||0; _npDur = (d&&d.duration)||0;
+  var n = document.getElementById('np-nothing-s');
+  var c = document.getElementById('np-content-s');
+  var bars = document.querySelectorAll('.wf-bar');
+  if(!_npPlaying){
+    n.style.display='block'; c.style.display='none';
+    bars.forEach(function(b){b.classList.remove('playing');}); return;
+  }
+  n.style.display='none'; c.style.display='block';
+  document.getElementById('np-title-s').textContent  = d.track  || '—';
+  document.getElementById('np-artist-s').textContent = d.artist || '—';
+  bars.forEach(function(b){b.classList.add('playing');});
+  _updateNpProgress();
+  if(_npInterval) clearInterval(_npInterval);
+  _npInterval = setInterval(function(){ if(_npPlaying){_npPos++;_updateNpProgress();} }, 1000);
+}
+function _updateNpProgress(){
+  var pct = _npDur>0 ? (_npPos/_npDur)*100 : 0;
+  document.getElementById('np-fill-s').style.width = Math.min(pct,100)+'%';
+  document.getElementById('np-el-s').textContent   = fmtTime(_npPos);
+  document.getElementById('np-tot-s').textContent  = fmtTime(_npDur);
+}
+
+/* ── WEATHER ────────────────────────────────────────────────────────────── */
+function updateWeather(d) {
+  if(!d) return;
+  var temp = d.temp !== undefined ? Math.round(d.temp) : '—';
+  document.getElementById('weather-val').textContent  = temp + '°';
+  document.getElementById('weather-desc').textContent = d.description || d.condition || '—';
+  document.getElementById('weather-hum').textContent  = (d.humidity !== undefined) ? d.humidity+'%' : '—';
+  document.getElementById('weather-wind').textContent = (d.wind !== undefined) ? d.wind : '—';
+}
+
+/* ── SYSTEM stats ───────────────────────────────────────────────────────── */
+function updateStats(d) {
+  if(!d) return;
+  function setBar(id,barId,val,max){
+    var el=document.getElementById(id), bar=document.getElementById(barId);
+    if(el) el.textContent = val !== undefined ? val+'%' : '—';
+    if(bar) bar.style.width = (val !== undefined ? Math.min(val,max||100) : 0)+'%';
+  }
+  setBar('s-cpu','s-cpu-bar', d.cpu);
+  setBar('s-ram','s-ram-bar', d.ram);
+  if(d.throughput !== undefined){
+    var el=document.getElementById('s-dsk'), bar=document.getElementById('s-dsk-bar');
+    if(el)  el.textContent = d.throughput > 0 ? d.throughput.toFixed(1)+' MB' : '0';
+    if(bar) bar.style.width = Math.min(d.throughput*5,100)+'%';
+  }
+  if(d.battery !== undefined){
+    document.getElementById('s-bat').textContent   = d.battery+'%';
+    document.getElementById('s-bat-bar').style.width = Math.min(d.battery,100)+'%';
+  }
+}
+
+/* ── CONTEXT ────────────────────────────────────────────────────────────── */
+function updateContext(d) { /* future: show context info in sidebar */ }
+
+/* ── NEWS ───────────────────────────────────────────────────────────────── */
+var _newsIdx = 0;
+function updateNews(arr) {
+  if(!arr || !arr.length) return;
+  var container = document.getElementById('feed-items');
+  container.innerHTML = '';
+  arr.forEach(function(item){
+    var el  = document.createElement('div');
+    el.className = 'feed-item';
+    var ts  = document.createElement('div'); ts.className='fi-ts'; ts.textContent='NEWS';
+    el.textContent = (item.title || item.content || '').slice(0,100);
+    el.appendChild(ts);
+    container.appendChild(el);
+  });
+}
+
+/* ── OBSIDIAN ───────────────────────────────────────────────────────────── */
+function updateObsidian(d) {
+  if(!d) return;
+  var el = document.getElementById('obs-note');
+  if(el) el.textContent = d.recent_note || d.title || '—';
+}
+
+/* ── REMINDERS ──────────────────────────────────────────────────────────── */
+function updateReminders(arr) {
+  var list = document.getElementById('rem-list');
+  if(!list || !arr) return;
+  list.innerHTML = '';
+  (arr||[]).slice(0,6).forEach(function(r){
+    var el = document.createElement('div');
+    el.className = 'rem-item';
+    el.textContent = (r.text || r.content || r).toString().slice(0,60);
+    list.appendChild(el);
+  });
+}
+</script>
+</body>
+</html>

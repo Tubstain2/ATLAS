@@ -48,7 +48,7 @@ _STYLE_CARD = f"""
     border: 1px solid {_DIM};
     border-radius: 10px;
     color: {_TEXT};
-    font-family: '{_FONT}', monospace;
+    font-family: '{_FONT}', 'Menlo';
 """
 
 
@@ -57,7 +57,7 @@ def _label(text: str = "", size: int = 13, color: str = _TEXT, bold: bool = Fals
     lbl = QLabel(text)
     weight = "bold" if bold else "normal"
     lbl.setStyleSheet(
-        f"color: {color}; font-family: '{_FONT}', monospace; "
+        f"color: {color}; font-family: '{_FONT}', 'Menlo'; "
         f"font-size: {size}px; font-weight: {weight}; background: transparent;"
     )
     lbl.setWordWrap(True)
@@ -84,6 +84,8 @@ class _BaseWidget:
         while True:
             try:
                 self.refresh()
+            except RuntimeError:
+                break  # Qt C++ object deleted — widget destroyed, stop loop
             except Exception as exc:
                 log.warning("%s refresh error: %s", type(self).__name__, exc)
             time.sleep(self.update_interval)
@@ -259,10 +261,10 @@ class SystemStatsWidget(_BaseWidget):
             ram_c = _GREEN if ram < 80 else _RED
             self._cpu.setText(f"{cpu:.0f}%")
             self._cpu.setStyleSheet(
-                f"color:{cpu_c};font-family:'{_FONT}',monospace;font-size:16px;font-weight:bold;background:transparent;")
+                f"color:{cpu_c};font-family:'{_FONT}','Menlo';font-size:16px;font-weight:bold;background:transparent;")
             self._ram.setText(f"{ram:.0f}%")
             self._ram.setStyleSheet(
-                f"color:{ram_c};font-family:'{_FONT}',monospace;font-size:16px;font-weight:bold;background:transparent;")
+                f"color:{ram_c};font-family:'{_FONT}','Menlo';font-size:16px;font-weight:bold;background:transparent;")
             self._disk.setText(f"{disk:.0f}%")
             self._bat.setText(bat_s)
         except ImportError:
@@ -387,7 +389,7 @@ class CryptoStocksWidget(_BaseWidget):
                     p.setText(price_s)
                     c.setText(change_s)
                     c.setStyleSheet(
-                        f"color:{color};font-family:'{_FONT}',monospace;"
+                        f"color:{color};font-family:'{_FONT}','Menlo';"
                         f"font-size:11px;background:transparent;")
         except Exception as exc:
             log.warning("Crypto fetch error: %s", exc)
@@ -411,7 +413,7 @@ class CryptoStocksWidget(_BaseWidget):
                     p.setText(price_s)
                     c.setText(change_s)
                     c.setStyleSheet(
-                        f"color:{color};font-family:'{_FONT}',monospace;"
+                        f"color:{color};font-family:'{_FONT}','Menlo';"
                         f"font-size:11px;background:transparent;")
         except Exception as exc:
             log.warning("Stocks fetch error: %s", exc)
@@ -469,7 +471,7 @@ class RemindersWidget(_BaseWidget):
             if i < len(pending):
                 lbl.setText(f"○ {pending[i]['text']}")
                 lbl.setStyleSheet(
-                    f"color:{_TEXT};font-family:'{_FONT}',monospace;font-size:11px;background:transparent;")
+                    f"color:{_TEXT};font-family:'{_FONT}','Menlo';font-size:11px;background:transparent;")
             else:
                 lbl.setText("")
 
@@ -665,7 +667,7 @@ class DashboardWindow:
         close_btn.setFixedHeight(32)
         close_btn.setStyleSheet(
             f"background: {_CARD}; color: {_DIM}; border: 1px solid {_DIM}; "
-            f"border-radius: 6px; font-family: '{_FONT}', monospace; font-size: 11px;"
+            f"border-radius: 6px; font-family: '{_FONT}', 'Menlo'; font-size: 11px;"
         )
         close_btn.clicked.connect(self.hide)
 

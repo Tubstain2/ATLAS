@@ -93,3 +93,21 @@ pynput>=1.7.6                        # global hotkey (push-to-talk cmd+space)
 
 # ── Chrome Control Module ──────────────────────────────────────────────────────
 playwright>=1.40.0          # CDP browser control (run: playwright install chromium)
+
+finnhub-python>=2.4.0
+
+# ── Camera Module ──────────────────────────────────────────────────────────────
+opencv-python>=4.8.0        # webcam capture (cv2.VideoCapture)
+
+# ── ACE Playbook + HERMES Memory ──────────────────────────────────────────────
+cryptography>=41.0.0        # Fernet symmetric encryption for memory files at rest
+keyring>=24.0.0             # macOS Keychain key storage (one-time Allow dialog on first run)
+
+# ── Hermes-inspired upgrades (Steps 2-9) ─────────────────────────────────────
+python-frontmatter>=1.1.0   # YAML frontmatter parsing for vault notes (VaultBrain)
+watchdog>=3.0.0             # filesystem monitor for vault auto-reload (SOUL.md, skills)
+apscheduler>=3.10.0         # cron scheduler (scheduler.py built-in jobs + user schedules)
+sqlalchemy>=2.0.0           # APScheduler SQLite job store (persistent cron across restarts)
+
+# ── Pipecat-inspired pipeline upgrades ────────────────────────────────────────
+noisereduce>=3.0.0          # spectral noise reduction for mic input (pipeline.py)

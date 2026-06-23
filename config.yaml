@@ -23,10 +23,10 @@ ui:
 voice:
   wake_word: "atlas"
   whisper_model: "auto"              # auto = detect chip (M1→base.en, M2/M3/M4→small.en, Intel→tiny.en)
-  piper_voice: "en_GB-jarvis-high"   # authentic JARVIS voice (downloaded on first use)
-  tts_model: "en_GB-alan-medium"     # legacy key; piper_voice takes precedence
-  voice_fallback: "en_US-ryan-high"  # fallback if JARVIS model fails to load
-  voice_model: "en_GB-jarvis-high"   # canonical key for JARVIS model
+  piper_voice: "en_US-ryan-high"     # primary TTS voice (JARVIS HF URL is dead)
+  tts_model: "en_US-ryan-high"       # legacy key; piper_voice takes precedence
+  voice_fallback: "en_US-ryan-high"  # fallback (same — keep consistent)
+  voice_model: "en_US-ryan-high"     # canonical key
   speech_rate: 1.0                   # 0.25–4.0; higher = faster
   voice_enabled: true                # false = text only, no audio output
   voice_length_scale: 0.95          # slightly slower for clarity
@@ -46,6 +46,7 @@ api:
   groq_model: "llama-3.3-70b-versatile"                    # deep reasoning + cloud fallback (GROQ_API_KEY)
   qwen_coder: "qwen/qwen3-coder:free"                       # full-project codegen (OPENROUTER_API_KEY)
   qwen_reasoning: "openai/gpt-oss-120b:free"               # deep multi-step reasoning (OPENROUTER_API_KEY)
+  vision_model: "qwen/qwen2.5-vl-7b-instruct:free"         # multimodal vision model for screen + webcam (OPENROUTER_API_KEY)
   # ── Markets ─────────────────────────────────────────────────────────────────
   tracked_crypto: ["bitcoin", "ethereum"]
   tracked_stocks: ["AAPL", "TSLA"]
@@ -136,3 +137,112 @@ watch_mode_interval: 30            # seconds between screenshots in watch mode
 
 # ── Push-to-talk ──────────────────────────────────────────────────────────────
 push_to_talk_hotkey: "cmd+space"
+
+# ── Market research ───────────────────────────────────────────────────────────
+watchlist: ["AAPL", "TSLA", "NVDA"]
+
+market:
+  market_update_interval: 300       # seconds between background price refreshes
+  market_hours_only_updates: true   # only refresh during US market hours
+  save_research_to_obsidian: true   # auto-save research reports to vault
+
+# ── Camera Module ─────────────────────────────────────────────────────────────
+camera_enabled: true
+camera_index: 0               # webcam index (0 = default built-in camera)
+
+# ── ACE Playbook System ───────────────────────────────────────────────────────
+playbook_enabled: true
+playbook_max_entries: 500
+playbook_injection_tokens: 500
+playbook_update_threshold: 0.7
+playbook_dedup_interval_days: 7
+
+# ── HERMES Memory System ──────────────────────────────────────────────────────
+memory_working_max_messages: 30
+memory_episodic_max_episodes: 365
+memory_retrieval_max_tokens: 800
+memory_skill_writing_enabled: true
+memory_encryption_enabled: true
+memory_obsidian_weekly_export: true
+session_greeting_enabled: true
+
+# ── Obsidian as Single Source of Truth ────────────────────────────────────────
+obsidian_atlas_folder: "ATLAS"
+obsidian_memory_folder: "ATLAS/Memory"
+obsidian_playbook_folder: "ATLAS/Playbook"
+obsidian_skills_folder: "ATLAS/Skills"
+obsidian_improvements_folder: "ATLAS/Improvements"
+obsidian_watch_for_changes: true
+obsidian_daily_note_folder: "ATLAS/Daily"
+obsidian_weekly_review_enabled: true
+obsidian_weekly_review_day: "sunday"
+memory_max_context_tokens: 800
+playbook_max_context_tokens: 500
+
+# ── SOUL module ────────────────────────────────────────────────────────────────
+soul_enabled: true
+soul_auto_reload: true            # reload soul.md when edited in Obsidian
+
+# ── Hermes Skills (directory-based, agentskills.io format) ────────────────────
+hermes_skills_enabled: true
+hermes_skills_folder: "ATLAS/Skills/Hermes"
+
+# ── Trajectory compression ────────────────────────────────────────────────────
+trajectory_compression_enabled: true
+trajectory_trigger_messages: 25    # compress at this many messages
+trajectory_trigger_tokens: 4000    # or at this estimated token count
+trajectory_head_protect: 3         # turns to protect at start
+trajectory_tail_protect: 4         # turns to protect at end
+
+# ── FTS5 session search ────────────────────────────────────────────────────────
+session_search_enabled: true
+session_search_db: "memory/atlas_search.db"
+
+# ── Cron scheduler ─────────────────────────────────────────────────────────────
+scheduler_enabled: true
+scheduler_db: "memory/atlas_jobs.db"
+scheduler_morning_briefing_time: "08:00"
+scheduler_weekly_review_day: "sunday"
+scheduler_weekly_review_time: "19:00"
+
+# ── Learning loop ──────────────────────────────────────────────────────────────
+learning_loop_enabled: true
+learning_loop_complexity_threshold: 6  # 0-10 score to write a new skill
+learning_loop_outcome_threshold: 4     # score to record outcome on existing skill
+learning_loop_low_success_rate: 0.5   # skills below this rate get 7-day review
+
+# ── Context files ──────────────────────────────────────────────────────────────
+context_files_enabled: true
+context_files_scan_interval: 60       # seconds between automatic rescans
+context_files_names: ["ATLAS.md", "AGENTS.md"]  # filenames to scan for
+
+# ── Honcho user modeling ────────────────────────────────────────────────────────
+honcho_enabled: true
+honcho_update_every_sessions: 5       # sessions between user model updates
+honcho_model_file: "ATLAS/Memory/honcho-model.md"
+
+# ── Voice pipeline (Pipecat-inspired) ───────────────────────────────────────────
+pipeline_interruption_enabled: true   # interrupt TTS when user starts speaking
+noise_cancellation_enabled: true      # apply spectral noise reduction to mic input
+
+# ── Lead agent planner (DeerFlow-inspired) ──────────────────────────────────────
+planner_enabled: true
+planner_complexity_threshold: 3       # steps before COMPLEX classification
+subagent_timeout_seconds: 30          # max seconds per sub-agent
+subagent_max_parallel: 4              # max concurrent parallel sub-agents
+
+# ── Code agent (Smolagents-inspired) ────────────────────────────────────────────
+code_agent_enabled: true
+code_agent_timeout: 30                # seconds before sandbox subprocess is killed
+
+# ── Offline / privacy mode (AgenticSeek-inspired) ───────────────────────────────
+offline_mode_auto_detect: true        # poll connectivity every N seconds
+offline_check_interval: 30            # seconds between connectivity probes
+privacy_mode_enabled: false           # force local-only even with internet
+offline_local_model: "ollama/llama3"  # local model to switch to when offline
+
+# ── Context7 live documentation ──────────────────────────────────────────────────
+context7_enabled: true
+context7_cache_hours: 24              # hours before doc cache expires
+context7_max_tokens: 5000             # max tokens of docs to inject per request
+

@@ -167,7 +167,11 @@ class ObsidianModule:
             title = self._after(lower, "take a note called")
             return self._prompt_note_content(title=title)
 
-        if any(p in lower for p in ("atlas take a note", "take a note", "create a note")):
+        if any(p in lower for p in (
+            "atlas take a note", "take a note", "create a note",
+            "make a note", "write a note", "jot this down", "jot that down",
+            "add a note", "save a note", "note this down", "make note",
+        )):
             return self._prompt_note_content()
 
         if any(p in lower for p in ("add to my notes", "add to notes", "append to my notes")):
@@ -803,9 +807,12 @@ class ObsidianModule:
 
     def _open_in_obsidian(self, path: Path) -> None:
         try:
-            subprocess.run(["open", str(path)], timeout=4, check=False)
+            subprocess.run(["open", "-a", "Obsidian", str(path)], timeout=4, check=False)
         except Exception:
-            pass
+            try:
+                subprocess.run(["open", str(path)], timeout=4, check=False)
+            except Exception:
+                pass
 
     def _cmd_set_vault(self, raw_path: str) -> str:
         raw_path = raw_path.strip().strip('"').strip("'")
@@ -872,6 +879,43 @@ class ObsidianModule:
         if not wa or not wb:
             return 0.0
         return len(wa & wb) / max(len(wa), len(wb))
+
+    # ── Public API used by other modules (MarketModule, etc.) ─────────────────
+
+    def write_note(self, rel_path: str, content: str) -> None:
+        """Write (overwrite) a note at a vault-relative path. Creates parent dirs."""
+        if not self._vault_ready():
+            return
+        path = self._vault / rel_path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            log.info("Obsidian.write_note: %s", path.name)
+        except Exception as exc:
+            log.warning("Obsidian.write_note failed (%s): %s", rel_path, exc)
+
+    def append_to_note(self, rel_path: str, content: str) -> None:
+        """Append content to a note at a vault-relative path."""
+        if not self._vault_ready():
+            return
+        path = self._vault / rel_path
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("", encoding="utf-8")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(content)
+            log.info("Obsidian.append_to_note: %s", path.name)
+        except Exception as exc:
+            log.warning("Obsidian.append_to_note failed (%s): %s", rel_path, exc)
+
+    def search_notes(self, query: str) -> list[dict]:
+        """Search vault for notes matching query. Returns list of {name, path, excerpt}."""
+        if not self._vault_ready():
+            return []
+        return self._run_search(query)
+
+    # ── Helpers ─────────────────────────────────────────────────────────────────
 
     def _speak(self, text: str) -> None:
         if self._speak_cb:

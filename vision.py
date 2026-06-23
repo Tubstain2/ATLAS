@@ -106,7 +106,7 @@ class VisionModule:
         # OpenRouter client for vision queries
         self._client = None
         self._model  = config.get("api", {}).get(
-            "qwen_coder", "qwen/qwen3-coder-480b-a35b-instruct:free"
+            "vision_model", "qwen/qwen2.5-vl-7b-instruct:free"
         )
         self._init_client()
 
@@ -121,7 +121,7 @@ class VisionModule:
                 base_url="https://openrouter.ai/api/v1",
                 api_key=key,
             )
-            log.info("Vision: Qwen3 Coder visual model ready via OpenRouter.")
+            log.info("Vision: model ready (%s) via OpenRouter.", self._model)
         except Exception as exc:
             log.warning("Vision: OpenRouter init failed: %s", exc)
 

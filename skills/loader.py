@@ -59,6 +59,7 @@ class SkillsLoader:
         self._lock        = threading.Lock()
         self._stop_event  = threading.Event()
         self._poll_thread: Optional[threading.Thread] = None
+        self._skipped: dict[Path, float] = {}   # path → mtime of non-skill files
         self._load_all()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -83,8 +84,8 @@ class SkillsLoader:
             log.warning("Skills folder not found: %s", self._skills_dir)
             return
 
-        # Skip __init__.py, loader.py, and any private files
-        _SKIP = {"__init__.py", "loader.py"}
+        # Skip __init__.py, loader.py, module files that are not skill plugins
+        _SKIP = {"__init__.py", "loader.py", "hermes.py"}
         for path in sorted(self._skills_dir.glob("*.py")):
             if path.name.startswith("_") or path.name in _SKIP:
                 continue
@@ -103,6 +104,7 @@ class SkillsLoader:
 
             if not hasattr(module, "skill_info") or not hasattr(module, "execute"):
                 log.warning("Skill %s missing skill_info() or execute() — skipped.", name)
+                self._skipped[path] = mtime   # don't retry unless file changes
                 return False
 
             info = module.skill_info()
@@ -135,10 +137,11 @@ class SkillsLoader:
         if not self._skills_dir.exists():
             return
 
+        _SKIP = {"__init__.py", "loader.py", "hermes.py"}
         current_files = {
             p: p.stat().st_mtime
             for p in self._skills_dir.glob("*.py")
-            if not p.name.startswith("_")
+            if not p.name.startswith("_") and p.name not in _SKIP
         }
 
         with self._lock:
@@ -146,6 +149,9 @@ class SkillsLoader:
 
         # New or modified files
         for path, mtime in current_files.items():
+            # Skip files previously found to not be skill plugins, unless they changed
+            if path in self._skipped and self._skipped[path] >= mtime:
+                continue
             if path not in loaded_paths or loaded_paths[path] < mtime:
                 log.info("Hot-reloading skill: %s", path.name)
                 self._load_skill(path)

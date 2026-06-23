@@ -109,6 +109,8 @@ class Brain:
         brain = Brain(config)
         brain.set_core(core)              # ATLASCore for control/web/edit/MLX
         brain.set_self_improve(engine)    # SelfImproveEngine
+        brain.set_playbook(playbook)      # PlaybookModule (ACE)
+        brain.set_memory(memory)          # MemoryModule (HERMES)
         vm.set_response_callback(brain.handle)
     """
 
@@ -131,6 +133,8 @@ class Brain:
         self._core         = None      # ATLASCore
         self._self_improve = None      # SelfImproveEngine
         self._spotify      = None      # SpotifyModule
+        self._playbook     = None      # PlaybookModule (ACE)
+        self._memory       = None      # MemoryModule (HERMES)
 
         # conversations/ folder
         root = Path(os.environ.get("ATLAS_ROOT", "."))
@@ -184,6 +188,14 @@ class Brain:
         self._spotify = spotify
         log.info("Spotify module wired into Brain.")
 
+    def set_playbook(self, playbook) -> None:
+        self._playbook = playbook
+        log.info("PlaybookModule wired into Brain.")
+
+    def set_memory(self, memory) -> None:
+        self._memory = memory
+        log.info("MemoryModule wired into Brain.")
+
     @property
     def groq_available(self) -> bool:
         return self._client is not None
@@ -235,7 +247,15 @@ class Brain:
                 self._save_session()
                 return sp
 
-        # 4 — Route to smart engine or core
+        # 4 — Notify Reflector that a new user turn started (resolves pending reflection)
+        if self._playbook:
+            self._playbook.on_user_turn(text)
+
+        # Notify memory of new user message
+        if self._memory:
+            self._memory.add_message("user", text)
+
+        # 5 — Route to smart engine or core
         route = self._route(text)
         log.info("[BRAIN/%s] %r", route.upper(), text[:70])
 
@@ -250,7 +270,18 @@ class Brain:
         else:
             response = self._core.handle(text) if self._core else self._no_core()
 
-        # 4 — Persist history
+        # Strip code blocks before sending to voice — TTS reads raw code literally
+        response = self._clean_for_voice(response)
+
+        # 6 — Notify Reflector that ATLAS has responded
+        if self._playbook and response:
+            self._playbook.on_atlas_response(text, response)
+
+        # Add ATLAS response to memory
+        if self._memory and response:
+            self._memory.add_message("assistant", response)
+
+        # 7 — Persist history
         self._add_history("user", text)
         if response:
             self._add_history("assistant", response)
@@ -303,6 +334,13 @@ class Brain:
         # Qwen3 Coder — explicit full-build tasks only (auto-detected)
         if self._qwen_client and any(kw in lower for kw in _QWEN_CODER_TRIGGERS):
             return "qwen_coder"
+
+        # If ATLAS just said something (asked a question, etc.), keep the
+        # conversation on the smart engine so it has history context.
+        if (self.smart_available
+                and self._history
+                and self._history[-1]["role"] == "assistant"):
+            return "smart"
 
         # Short conversational → core (MLX is fast)
         return "core"
@@ -384,10 +422,30 @@ class Brain:
             return self._raw_qwen(self._qwen_next_model, messages)
         return self._raw_groq(messages)
 
+    def _build_enriched_system(self, query: str = "") -> str:
+        """Combine base system prompt with playbook and memory context."""
+        parts = [self._system]
+        if self._memory:
+            mem_ctx = self._memory.get_prompt_context(query)
+            if mem_ctx:
+                parts.append(mem_ctx)
+        if self._playbook:
+            pb_ctx = self._playbook.get_prompt_injection(query)
+            if pb_ctx:
+                parts.append(pb_ctx)
+        # Check for a relevant skill file
+        if self._memory and query:
+            skill = self._memory.load_skill(query)
+            if skill:
+                parts.append(f"RELEVANT LEARNED SKILL:\n{skill[:800]}")
+        return "\n\n".join(parts)
+
     def _raw_groq(self, messages: list[dict]) -> str:
+        query = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         with self._lock:
             try:
-                full_messages = [{"role": "system", "content": self._system}] + messages
+                system        = self._build_enriched_system(query)
+                full_messages = [{"role": "system", "content": system}] + messages
                 resp = self._client.chat.completions.create(
                     model=self._model,
                     messages=full_messages,
@@ -406,10 +464,12 @@ class Brain:
 
     def _raw_qwen(self, model: str, messages: list[dict]) -> str:
         """/no_think suppresses Qwen3 chain-of-thought for snappy voice responses."""
+        query = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         with self._lock:
             try:
+                system        = "/no_think\n" + self._build_enriched_system(query)
                 full_messages = [
-                    {"role": "system", "content": "/no_think\n" + self._system}
+                    {"role": "system", "content": system}
                 ] + messages
                 resp = self._qwen_client.chat.completions.create(
                     model=model,
@@ -507,6 +567,19 @@ class Brain:
             return self._ask_smart_with_history(prompt)
         topics = [m["content"][:70] for m in self._history if m["role"] == "user"][:5]
         return "This session we covered: " + "; ".join(topics) + "."
+
+    def _clean_for_voice(self, response: str) -> str:
+        """Strip code blocks so TTS never reads raw code aloud."""
+        import re
+        fenced = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+        code_blocks = fenced.findall(response)
+        if not code_blocks:
+            return response
+        # Count lines so we can give a useful summary
+        total_lines = sum(len(b.splitlines()) for b in code_blocks)
+        prose = fenced.sub("", response).strip()
+        summary = f"I've written {total_lines} lines of code for that, {self._user_name}. Say 'save that code' to write it to a file."
+        return (prose + " " + summary).strip() if prose else summary
 
     @staticmethod
     def _no_core() -> str:

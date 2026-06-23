@@ -95,41 +95,76 @@ class AmbientModule:
     # ── Push-to-talk ──────────────────────────────────────────────────────────
 
     def _start_ptt(self):
+        """
+        Run pynput in an isolated subprocess so that macOS Sequoia's
+        dispatch_assert_queue_fail / SIGTRAP inside TSMGetInputSourceProperty
+        can't crash the ATLAS main process.
+        Events are sent as 'start'/'end' lines over stdout.
+        """
+        import subprocess, sys, threading
+
+        # pynput subprocess: ignores SIGTRAP, monitors cmd+space
+        _script = (
+            "import sys, signal\n"
+            "signal.signal(signal.SIGTRAP, signal.SIG_IGN)\n"
+            "try:\n"
+            "    from pynput import keyboard as kb\n"
+            "    held = set()\n"
+            "    required = {kb.Key.cmd, kb.Key.space}\n"
+            "    active = [False]\n"
+            "    def _id(k):\n"
+            "        return k if isinstance(k, kb.Key) else getattr(k, 'char', k)\n"
+            "    def on_press(k):\n"
+            "        held.add(_id(k))\n"
+            "        if required.issubset(held) and not active[0]:\n"
+            "            active[0] = True; print('start', flush=True)\n"
+            "    def on_release(k):\n"
+            "        held.discard(_id(k))\n"
+            "        if active[0] and not required.issubset(held):\n"
+            "            active[0] = False; print('end', flush=True)\n"
+            "    from pynput.keyboard import Listener\n"
+            "    with Listener(on_press=on_press, on_release=on_release) as l:\n"
+            "        l.join()\n"
+            "except Exception as e:\n"
+            "    sys.stderr.write(str(e)+'\\n'); sys.exit(1)\n"
+        )
+
         try:
-            from pynput import keyboard as kb
+            proc = subprocess.Popen(
+                [sys.executable, "-c", _script],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            self._ptt_proc = proc
 
-            # Parse hotkey string: "cmd+space" → {Key.cmd, Key.space}
-            key_names = [k.strip().lower() for k in self._ptt_hotkey.split("+")]
-            self._ptt_keys_required = self._parse_ptt_keys(key_names, kb)
-            self._ptt_keys_held: set = set()
+            def _reader():
+                try:
+                    for raw in proc.stdout:
+                        event = raw.decode(errors="ignore").strip()
+                        if event == "start" and not self._ptt_active:
+                            self._ptt_active = True
+                            self._on_ptt_start()
+                        elif event == "end" and self._ptt_active:
+                            self._ptt_active = False
+                            self._on_ptt_end()
+                except Exception:
+                    pass
 
-            def _on_press(key):
-                key_id = self._key_id(key)
-                self._ptt_keys_held.add(key_id)
-                if self._ptt_keys_required.issubset(self._ptt_keys_held):
-                    if not self._ptt_active:
-                        self._ptt_active = True
-                        self._on_ptt_start()
-
-            def _on_release(key):
-                key_id = self._key_id(key)
-                self._ptt_keys_held.discard(key_id)
-                if self._ptt_active and not self._ptt_keys_required.issubset(self._ptt_keys_held):
-                    self._ptt_active = False
-                    self._on_ptt_end()
-
-            from pynput.keyboard import Listener
-            self._ptt_listener = Listener(on_press=_on_press, on_release=_on_release)
-            self._ptt_listener.daemon = True
-            self._ptt_listener.start()
+            threading.Thread(target=_reader, daemon=True, name="ptt-reader").start()
             log.info("Push-to-talk ready: hold %s to speak.", self._ptt_hotkey)
 
-        except ImportError:
-            log.warning("pynput not installed — push-to-talk disabled. pip install pynput")
         except Exception as exc:
-            log.warning("Push-to-talk init failed: %s", exc)
+            log.warning("Push-to-talk subprocess failed: %s", exc)
 
     def _stop_ptt(self):
+        proc = getattr(self, "_ptt_proc", None)
+        if proc:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            self._ptt_proc = None
+        # legacy listener cleanup
         if self._ptt_listener:
             try:
                 self._ptt_listener.stop()

@@ -14,6 +14,8 @@ import os
 import logging
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+
 
 def _load_zshenv():
     """Load exports from ~/.zshenv so GUI app launches have the same env as the shell."""
@@ -47,6 +49,14 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s  %(message)s",
     datefmt="%H:%M:%S",
 )
+logging.getLogger("primp").setLevel(logging.WARNING)          # suppress 200 OK noise
+logging.getLogger("ddgs.engines.yahoo_news").setLevel(logging.ERROR)  # suppress IndexError noise
+
+# macOS Sequoia: dispatch_assert_queue_fail raises EXC_BREAKPOINT/SIGTRAP from TSM bg threads.
+# Ignore it — log.warning() is unsafe inside a signal handler (reentrant), so just no-op.
+import signal as _signal
+_signal.signal(_signal.SIGTRAP, _signal.SIG_IGN)
+os.environ.setdefault("QT_IM_MODULE", "")              # suppress TSM macOS error
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt, QTimer
@@ -67,11 +77,28 @@ from shazam import ShazamModule
 from imagegen import ImageGenModule
 from obsidian import ObsidianModule
 from vision import VisionModule
+from camera import CameraModule
 from overlay import OverlayWindow, handle_overlay_command
 from ambient import AmbientModule
 from skills.loader import SkillsLoader
+from skills.hermes import HermesSkillsModule
 from digest import DigestModule
 from sounds import SoundEngine
+from playbook import PlaybookModule
+from memory import MemoryModule
+from vault_brain import VaultBrain
+from soul import SoulModule
+from trajectory_compressor import ATLASTrajectoryCompressor
+from session_search import SessionSearch
+from scheduler import ATLASScheduler
+from learning_loop import LearningLoop
+from context_files import ContextFilesModule
+from honcho import HonchoModule
+from pipeline import ATLASVoicePipeline, EchoGate
+from planner import ATLASPlanner
+from code_agent import ATLASCodeAgent
+from offline import ATLASOfflineMode
+from context7 import ATLASContext7
 
 import yaml
 
@@ -313,6 +340,273 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
     window._obsidian = obsidian_mod
 
+    # ── VaultBrain — Obsidian as single source of truth ───────────────────────
+    vault_brain = None
+    soul_mod    = None
+    try:
+        obs_cfg    = config.get("obsidian", {})
+        vault_path = obs_cfg.get("vault_path", "")
+        if vault_path:
+            atlas_folder = config.get("obsidian_atlas_folder", "ATLAS")
+            vault_brain  = VaultBrain(Path(vault_path).expanduser(), atlas_folder)
+            vault_brain.ensure_daily_note()  # create today's daily note if missing
+
+            # SoulModule — load personality from ATLAS/soul.md
+            soul_mod = SoulModule(vault_brain)
+            soul_mod.inject(brain)
+
+            # Watchdog: speak when user edits vault files from Obsidian
+            if config.get("obsidian_watch_for_changes", True):
+                def _on_vault_change(filepath: str):
+                    soul_mod.on_vault_change(filepath)
+                    # defined after hermes_skills but captured by closure at call time
+                    _hs = window.__dict__.get("_hermes_skills")
+                    if _hs is not None:
+                        _hs.reload_skill(filepath)
+                    fname = Path(filepath).name.replace(".md", "").replace("-", " ")
+                    msg   = f"Boss, I noticed you updated {fname} in the vault."
+                    QTimer.singleShot(0, lambda: vm.speak(msg))
+
+                vault_brain.start_watcher(_on_vault_change)
+                log.info("Vault watchdog active.")
+
+            log.info("VaultBrain: ready at %s", vault_path)
+    except Exception as _vb_err:
+        log.warning("VaultBrain unavailable (%s) — memory using in-memory only.", _vb_err)
+
+    # ── ACE Playbook ──────────────────────────────────────────────────────────
+    playbook = PlaybookModule(
+        config,
+        brain=brain,
+        feed_cb=window.feed_panel.add_feed_item,
+        vault_brain=vault_brain,
+    )
+    brain.set_playbook(playbook)
+
+    _orig_meta_playbook = brain._handle_meta
+
+    def _meta_with_playbook(text: str):
+        resp = playbook.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_playbook(text)
+
+    brain._handle_meta = _meta_with_playbook
+    window._playbook = playbook
+
+    # ── HERMES Memory ─────────────────────────────────────────────────────────
+    memory_mod = MemoryModule(config, brain=brain, obsidian=obsidian_mod,
+                              vault_brain=vault_brain)
+    brain.set_memory(memory_mod)
+
+    _orig_meta_memory = brain._handle_meta
+
+    def _meta_with_memory(text: str):
+        resp = memory_mod.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_memory(text)
+
+    brain._handle_meta = _meta_with_memory
+    window._memory = memory_mod
+
+    # ── Soul voice commands ───────────────────────────────────────────────────
+    _orig_meta_soul = brain._handle_meta
+
+    def _meta_with_soul(text: str):
+        if soul_mod is not None:
+            resp = soul_mod.handle(text)
+            if resp is not None:
+                return resp
+        return _orig_meta_soul(text)
+
+    brain._handle_meta = _meta_with_soul
+    window._soul = soul_mod
+
+    # ── Hermes vault skills ───────────────────────────────────────────────────
+    hermes_skills = HermesSkillsModule(vault_brain, brain)
+
+    _orig_meta_hermes = brain._handle_meta
+
+    def _meta_with_hermes(text: str):
+        resp = hermes_skills.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_hermes(text)
+
+    brain._handle_meta = _meta_with_hermes
+    window._hermes_skills = hermes_skills
+
+    # ── Trajectory compressor ─────────────────────────────────────────────────
+    compressor = ATLASTrajectoryCompressor(brain, vault_brain)
+
+    _orig_meta_compress = brain._handle_meta
+
+    def _meta_with_compress(text: str):
+        resp = compressor.handle(text)
+        if resp is not None:
+            return resp
+        result = _orig_meta_compress(text)
+        # Auto-compress after each turn if threshold hit
+        compressor.maybe_compress()
+        return result
+
+    brain._handle_meta = _meta_with_compress
+    window._compressor = compressor
+
+    # ── FTS5 session search ───────────────────────────────────────────────────
+    _search_db = Path(os.environ.get("ATLAS_ROOT", ".")) / "memory" / "atlas_search.db"
+    session_search = SessionSearch(_search_db, brain)
+
+    # Bulk-index vault contents on startup (background)
+    if vault_brain is not None:
+        import threading as _threading
+        def _bulk_index():
+            session_search.bulk_index_from_vault(vault_brain)
+        _threading.Thread(target=_bulk_index, daemon=True, name="atlas-search-index").start()
+
+    # Wire into brain.handle to auto-index every turn
+    _orig_handle_search = brain.handle
+
+    def _handle_with_search(text: str) -> str:
+        response = _orig_handle_search(text)
+        session_search.index_message("user", text)
+        if response:
+            session_search.index_message("assistant", response)
+        return response
+
+    brain.handle = _handle_with_search
+    vm.set_response_callback(_handle_with_search)
+
+    _orig_meta_search = brain._handle_meta
+
+    def _meta_with_search(text: str):
+        resp = session_search.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_search(text)
+
+    brain._handle_meta = _meta_with_search
+    window._session_search = session_search
+
+    # ── Cron scheduler ────────────────────────────────────────────────────────
+    atlas_scheduler = ATLASScheduler(
+        config,
+        brain        = brain,
+        vault_brain  = vault_brain,
+        speak_cb     = vm.speak,
+        memory_module= memory_mod,
+    )
+    QTimer.singleShot(6000, atlas_scheduler.start)   # start after modules are wired
+
+    _orig_meta_sched = brain._handle_meta
+
+    def _meta_with_scheduler(text: str):
+        resp = atlas_scheduler.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_sched(text)
+
+    brain._handle_meta = _meta_with_scheduler
+    window._scheduler  = atlas_scheduler
+
+    # ── Learning loop ─────────────────────────────────────────────────────────
+    learning_loop = LearningLoop(
+        brain         = brain,
+        memory_module = memory_mod,
+        vault_brain   = vault_brain,
+        hermes_skills = hermes_skills,
+    )
+
+    # Wrap brain.handle to trigger evaluation after each response
+    _orig_handle_ll = brain.handle
+
+    def _handle_with_learning(text: str) -> str:
+        response = _orig_handle_ll(text)
+        if response:
+            learning_loop.evaluate(text, response)
+        return response
+
+    brain.handle = _handle_with_learning
+    vm.set_response_callback(_handle_with_learning)
+
+    _orig_meta_ll = brain._handle_meta
+
+    def _meta_with_ll(text: str):
+        resp = learning_loop.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_ll(text)
+
+    brain._handle_meta = _meta_with_ll
+    window._learning_loop = learning_loop
+
+    # ── Context files ─────────────────────────────────────────────────────────
+    ctx_files = ContextFilesModule(brain=brain, speak_cb=vm.speak)
+    ctx_files.inject(brain)
+    QTimer.singleShot(3000, ctx_files.start)
+
+    # Wire CWD updates from context_manager into ctx_files
+    def _on_ctx_with_cwd(ctx: dict):
+        cwd = ctx.get("file", "")
+        if cwd:
+            import os as _os
+            project_dir = _os.path.dirname(cwd)
+            if project_dir:
+                ctx_files.update_cwd(project_dir)
+
+    ctx_mgr.context_updated.connect(_on_ctx_with_cwd, Qt.ConnectionType.QueuedConnection)
+
+    _orig_meta_ctxf = brain._handle_meta
+
+    def _meta_with_ctxfiles(text: str):
+        resp = ctx_files.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_ctxf(text)
+
+    brain._handle_meta = _meta_with_ctxfiles
+    window._ctx_files  = ctx_files
+
+    # ── Honcho user modeling ──────────────────────────────────────────────────
+    honcho = HonchoModule(vault_brain=vault_brain, brain=brain, config=config)
+
+    _orig_meta_honcho = brain._handle_meta
+
+    def _meta_with_honcho(text: str):
+        resp = honcho.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_honcho(text)
+
+    brain._handle_meta = _meta_with_honcho
+    window._honcho     = honcho
+
+    # Wire Honcho into shutdown — fires after memory_mod.on_shutdown() saves the episode
+    if app := QApplication.instance():
+        def _honcho_on_shutdown():
+            honcho.on_session_end()
+        app.aboutToQuit.connect(_honcho_on_shutdown)
+
+    # ── Market research ───────────────────────────────────────────────────────
+    market = None
+    try:
+        from market import MarketModule
+        market = MarketModule(config, speak_cb=vm.speak, brain=brain, obsidian=obsidian_mod)
+
+        _orig_meta_market_base = brain._handle_meta
+
+        def _meta_with_market(text: str):
+            resp = market.handle(text)
+            if resp is not None:
+                return resp
+            return _orig_meta_market_base(text)
+
+        brain._handle_meta = _meta_with_market
+        QTimer.singleShot(5000, market.start)
+    except Exception as _mkt_err:
+        log.warning("MarketModule unavailable: %s", _mkt_err)
+
     # ── Sound engine ──────────────────────────────────────────────────────────
     sounds = SoundEngine(config)
     sounds.start_ambient()
@@ -361,6 +655,26 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
         return _orig_meta_vision(text)
 
     brain._handle_meta = _meta_with_vision
+
+    # ── Webcam camera module ──────────────────────────────────────────────────
+    camera = CameraModule(config, brain=brain)
+    camera.set_speak_callback(vm.speak)
+    camera.set_state_callback(window.set_state)
+    # UI dot update: call JS setCameraState(on)
+    camera.set_ui_camera_callback(
+        lambda on: QTimer.singleShot(0, lambda: window._js(f"setCameraState({'true' if on else 'false'})"))
+    )
+    # Attach to window so UI button can toggle via window._camera_module
+    window._camera_module = camera
+
+    _orig_meta_camera = brain._handle_meta
+
+    def _meta_with_camera(text: str):
+        if camera.handles(text):
+            return camera.handle(text)
+        return _orig_meta_camera(text)
+
+    brain._handle_meta = _meta_with_camera
 
     # ── Cursor overlay ────────────────────────────────────────────────────────
     overlay = OverlayWindow(config)
@@ -466,8 +780,163 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
         sounds.play("STARTUP")
 
     QTimer.singleShot(1000, vm.pre_warm)
-    QTimer.singleShot(2500, ambient.start)
+    QTimer.singleShot(5000, ambient.start)      # must start AFTER voice calibration (~2.3s)
     QTimer.singleShot(3500, _post_calibration_setup)
+
+    # ── Session greeting (after UI is ready) ──────────────────────────────────
+    if config.get("session_greeting_enabled", True):
+        def _speak_startup_greeting():
+            try:
+                greeting = memory_mod.generate_greeting()
+                if greeting:
+                    vm.speak(greeting)
+            except Exception:
+                pass
+        QTimer.singleShot(4500, _speak_startup_greeting)
+
+    # ── Voice pipeline (Pipecat-inspired) ─────────────────────────────────────
+    # Created first so vm.speak wrapper is in place before other new modules
+    voice_pipeline = ATLASVoicePipeline(config, speak_cb=vm.speak)
+    echo_gate      = EchoGate(gate_duration_secs=2.0)
+
+    # Wrap vm.speak: notify pipeline of TTS start/stop for interruption tracking
+    _orig_speak = vm.speak
+
+    def _speak_with_pipeline(text: str, **kwargs):
+        voice_pipeline.notify_tts_started()
+        echo_gate.on_tts_started()
+        try:
+            _orig_speak(text, **kwargs)
+        finally:
+            voice_pipeline.notify_tts_done()
+            echo_gate.on_tts_done()
+
+    vm.speak = _speak_with_pipeline
+
+    # Wire interrupt callback to stop TTS mid-sentence
+    def _interrupt_tts():
+        try:
+            if hasattr(vm, "_tts") and vm._tts:
+                if hasattr(vm._tts, "stop_speaking"):
+                    vm._tts.stop_speaking()
+        except Exception as exc:
+            log.debug("TTS interrupt error: %s", exc)
+
+    voice_pipeline.set_interrupt_callback(_interrupt_tts)
+
+    # Wire VAD speech-start → pipeline (delayed until worker exists at ~3.5s)
+    def _post_calibration_setup_pipeline():
+        if vm._worker:
+            try:
+                vm._worker.wake_word_detected.connect(
+                    voice_pipeline.notify_user_speech_detected)
+            except Exception:
+                pass
+
+    QTimer.singleShot(3600, _post_calibration_setup_pipeline)
+    voice_pipeline.start()
+
+    _orig_meta_pipeline = brain._handle_meta
+
+    def _meta_with_pipeline(text: str):
+        resp = voice_pipeline.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_pipeline(text)
+
+    brain._handle_meta = _meta_with_pipeline
+    window._voice_pipeline = voice_pipeline
+    window._echo_gate      = echo_gate
+
+    # ── Offline mode monitor (AgenticSeek-inspired) ──────────────────────────
+    # vm.speak is now the pipeline-wrapped version — offline announcements are tracked
+    offline_mode = ATLASOfflineMode(config, brain=brain, speak_cb=vm.speak)
+    offline_mode.start()
+
+    _orig_meta_offline = brain._handle_meta
+
+    def _meta_with_offline(text: str):
+        resp = offline_mode.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_offline(text)
+
+    brain._handle_meta = _meta_with_offline
+
+    # ── Context7 live documentation ──────────────────────────────────────────
+    context7 = ATLASContext7(config, offline_mode=offline_mode)
+    context7.start()
+
+    _orig_meta_ctx7 = brain._handle_meta
+
+    def _meta_with_ctx7(text: str):
+        resp = context7.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_ctx7(text)
+
+    brain._handle_meta = _meta_with_ctx7
+    window._context7 = context7
+
+    # Context7 doc injector for coding requests
+    def _inject_docs_into_code(task: str) -> str:
+        libs = context7.detect_libraries(task)
+        if libs and offline_mode.context7_fetch_available:
+            return context7.inject_into_prompt(task, *libs)
+        return task
+
+    # ── Code agent (Smolagents-inspired) ─────────────────────────────────────
+    code_agent_enabled = config.get("code_agent_enabled", True)
+    code_agent = None
+    if code_agent_enabled:
+        code_agent = ATLASCodeAgent(
+            brain=brain, config=config,
+            vault_brain=vault_brain, speak_cb=vm.speak,   # pipeline-wrapped speak
+        )
+
+        _orig_meta_code = brain._handle_meta
+
+        def _meta_with_code(text: str):
+            resp = code_agent.handle(text)
+            if resp is not None:
+                return resp
+            return _orig_meta_code(text)
+
+        brain._handle_meta = _meta_with_code
+
+        _orig_handle_code = brain.handle
+
+        def _handle_with_code(text: str) -> str:
+            if code_agent.is_code_request(text):
+                enriched = _inject_docs_into_code(text)
+                return code_agent.process_request(enriched)
+            return _orig_handle_code(text)
+
+        brain.handle = _handle_with_code
+        vm.set_response_callback(_handle_with_code)
+        window._code_agent = code_agent
+
+    # ── Lead agent planner (DeerFlow-inspired) ────────────────────────────────
+    planner_enabled = config.get("planner_enabled", True)
+    planner = None
+    if planner_enabled:
+        planner = ATLASPlanner(
+            brain=brain, config=config,
+            vault_brain=vault_brain, speak_cb=vm.speak,   # pipeline-wrapped speak
+            web_module=web,
+        )
+        planner.inject(brain)   # wraps brain.handle to intercept MEDIUM/COMPLEX tasks
+
+        _orig_meta_planner = brain._handle_meta
+
+        def _meta_with_planner(text: str):
+            resp = planner.handle(text)
+            if resp is not None:
+                return resp
+            return _orig_meta_planner(text)
+
+        brain._handle_meta = _meta_with_planner
+        window._planner = planner
 
     # Keep references so they aren't GC'd
     window._core           = core
@@ -480,13 +949,19 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     window._self_improve   = engine
     window._spotify        = spotify
     window._dashboard      = dash
+    window._market         = market
     window._chrome         = chrome
     window._vision         = vision
+    window._camera         = camera
     window._overlay        = overlay
     window._skills         = skills
     window._digest         = digest
     window._ambient        = ambient
     window._sounds         = sounds
+    window._vault_brain    = vault_brain
+    window._offline_mode   = offline_mode
+    window._context7       = context7
+    window._voice_pipeline = voice_pipeline
 
     # Graceful shutdown
     app = QApplication.instance()
@@ -495,12 +970,21 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
         app.aboutToQuit.connect(ctx_mgr.stop)
         app.aboutToQuit.connect(feed_mgr.stop)
         app.aboutToQuit.connect(vision.stop)
+        app.aboutToQuit.connect(camera.stop)
         app.aboutToQuit.connect(ambient.stop)
         app.aboutToQuit.connect(sounds.stop)
         app.aboutToQuit.connect(skills.stop)
         app.aboutToQuit.connect(digest.stop)
+        if market is not None:
+            app.aboutToQuit.connect(market.stop)
         if chrome is not None:
             app.aboutToQuit.connect(lambda: chrome._cmd_q.put(None))
+        # Memory and playbook shutdown — save session, extract facts, export
+        app.aboutToQuit.connect(memory_mod.on_shutdown)
+        if vault_brain is not None:
+            app.aboutToQuit.connect(vault_brain.stop_watcher)
+        app.aboutToQuit.connect(offline_mode.stop)
+        app.aboutToQuit.connect(voice_pipeline.stop)
 
 
 def _handle_feed_command(text: str, window: ATLASMainWindow, feed_mgr: FeedManager):

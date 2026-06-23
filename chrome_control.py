@@ -133,9 +133,16 @@ class ChromeControl:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            connected = (self._try_cdp() or
-                         self._try_persistent_context() or
-                         self._try_fresh_browser())
+            # Try CDP first (Chrome already running with debug port)
+            if self._try_cdp():
+                connected = True
+            elif self._auto_relaunch:
+                # Relaunch Chrome with debug port, then retry CDP
+                log.info("ChromeControl: relaunching Chrome with debug port %d …", self._debug_port)
+                self._relaunch_chrome()
+                connected = self._try_cdp() or self._try_fresh_browser()
+            else:
+                connected = self._try_persistent_context() or self._try_fresh_browser()
             ready_q.put(connected)
             if not connected:
                 return
@@ -169,7 +176,7 @@ class ChromeControl:
             log.info("ChromeControl: connected via CDP (%d pages).", len(pages))
             return True
         except Exception as exc:
-            log.debug("CDP connect failed: %s", exc)
+            log.info("ChromeControl: CDP connect failed: %s", str(exc).split("\n")[0])
             if p is not None:
                 try:
                     p.stop()
@@ -202,7 +209,7 @@ class ChromeControl:
             log.info("ChromeControl: persistent context ready (real Chrome profile).")
             return True
         except Exception as exc:
-            log.warning("Persistent context failed: %s", exc)
+            log.debug("Persistent context unavailable (Chrome already running): %s", str(exc).split("\n")[0])
             if p is not None:
                 try:
                     p.stop()
@@ -226,37 +233,35 @@ class ChromeControl:
             return False
 
     def _relaunch_chrome(self) -> None:
-        import os, signal as _signal
-        # Force-kill all Chrome processes (osascript quit can leave singletons)
-        try:
-            result = subprocess.run(["pgrep", "-f", "Google Chrome"],
-                                    capture_output=True, text=True)
-            for pid in result.stdout.strip().splitlines():
-                try:
-                    os.kill(int(pid), _signal.SIGKILL)
-                except (ProcessLookupError, ValueError):
-                    pass
-        except Exception:
-            pass
-        time.sleep(2.0)
+        """Launch a dedicated ATLAS Chrome instance with a separate profile + debug port.
 
-        # Remove singleton lock files left by SIGKILL
+        Does NOT kill the user's existing Chrome — runs alongside it.
+        Profile is stored at ~/.atlas/chrome-profile so cookies/logins persist
+        between ATLAS sessions.
+        """
         import pathlib
-        chrome_data = pathlib.Path.home() / "Library/Application Support/Google/Chrome"
-        for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
-            (chrome_data / lock).unlink(missing_ok=True)
+        atlas_profile = pathlib.Path.home() / ".atlas" / "chrome-profile"
+        atlas_profile.mkdir(parents=True, exist_ok=True)
 
         try:
-            subprocess.Popen([
-                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                f"--remote-debugging-port={self._debug_port}",
-                f"--remote-allow-origins=http://localhost:{self._debug_port}",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ])
+            subprocess.Popen(
+                [
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                    f"--remote-debugging-port={self._debug_port}",
+                    f"--remote-allow-origins=http://localhost:{self._debug_port}",
+                    f"--user-data-dir={atlas_profile}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-sync",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            log.info("ChromeControl: ATLAS Chrome launched (profile: %s)", atlas_profile)
         except FileNotFoundError:
             log.error("Chrome not found at /Applications/Google Chrome.app")
-        time.sleep(3.0)
+            return
+        time.sleep(4.0)   # give Chrome time to open the debug port
 
     def _connected(self) -> bool:
         return self._page is not None

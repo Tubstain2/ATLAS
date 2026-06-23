@@ -104,8 +104,10 @@ class FeedManager(QObject):
     def __init__(self, config: dict):
         super().__init__()
         self._cfg    = config
-        self._lat    = config.get("location_lat", 51.5)
-        self._lon    = config.get("location_lon", -0.1)
+        self._lat, self._lon = self._detect_location(
+            config.get("location_lat", 51.5),
+            config.get("location_lon", -0.1),
+        )
         self._active = False
 
         root = Path(os.environ.get("ATLAS_ROOT", "."))
@@ -127,6 +129,25 @@ class FeedManager(QObject):
 
         # obsidian module (injected after construction)
         self._obsidian_mod = None
+
+    # ── Location auto-detect ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _detect_location(default_lat: float, default_lon: float):
+        """Try to auto-detect lat/lon from IP; fall back to config values."""
+        try:
+            import urllib.request, json as _json, ssl
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen("https://ipinfo.io/json", timeout=3, context=ctx) as r:
+                data = _json.loads(r.read())
+            loc = data.get("loc", "")
+            if loc and "," in loc:
+                lat, lon = loc.split(",", 1)
+                log.info("Location auto-detected: %s, %s (%s)", lat, lon, data.get("city", ""))
+                return float(lat), float(lon)
+        except Exception:
+            pass
+        return default_lat, default_lon
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
