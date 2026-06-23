@@ -90,7 +90,11 @@ class ContentClassifier:
                     'rotten tomatoes', 'playstation', 'xbox', 'nintendo'}
     _PRODUCT_KW  = {'laptop', 'smartphone', 'headphone', 'tablet', 'monitor', 'keyboard',
                     'graphics card', 'processor', 'camera', 'speaker', 'specifications',
-                    'best laptop', 'recommended', 'top pick', 'review', 'benchmark'}
+                    'best laptop', 'recommended', 'top pick', 'review', 'benchmark',
+                    'gaming', 'rtx', 'gtx', 'gpu', 'ram', 'ssd', 'storage', 'display',
+                    'refresh rate', 'performance', 'budget', 'option', 'recommendation',
+                    'under $', 'priced at', 'costs', 'starting at', 'gigabyte', 'asus',
+                    'razer', 'msi', 'alienware', 'lenovo legion', 'dell xps', 'macbook'}
 
     def classify(self, text: str) -> Optional[str]:
         lower = text.lower()
@@ -140,6 +144,10 @@ class ContentClassifier:
         lower = text.lower()
         word_count = len(text.split())
 
+        # Always skip very short responses
+        if word_count < 15:
+            return False
+
         # Conversational one-liners — skip
         skip_starts = ("sure", "okay", "yes,", "no,", "i'll", "of course",
                        "got it", "done.", "done!", "understood", "alright")
@@ -149,13 +157,15 @@ class ContentClassifier:
         # Data-dense templates can be short (stock quotes, weather readings)
         template = self.classify(text)
         if template in ('stock', 'weather', 'recipe', 'comparison'):
-            return template is not None
+            return True
 
-        # General content: require at least 15 words
-        if word_count < 15:
-            return False
+        # Any matched template with enough content
+        if template is not None:
+            return True
 
-        return template is not None
+        # Fallback: long responses (50+ words) always get a list card even if
+        # no specific template matched — better to show something than nothing
+        return word_count >= 50
 
 
 # ── Card Data Builder ──────────────────────────────────────────────────────────
@@ -953,11 +963,7 @@ class SmartCardManager:
                      template, len(response.split()))
             return
 
-        template = self._classifier.classify(response)
-        if not template:
-            log.info("SmartCard: no template matched — skipping.")
-            return
-
+        template = self._classifier.classify(response) or 'list'
         log.info("SmartCard: MATCHED template=%s, words=%d — emitting signal.",
                  template, len(response.split()))
         card_data = self._builder.build(

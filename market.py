@@ -250,18 +250,32 @@ class MarketModule:
                 return self._cmd_smart_analysis(tk)
 
         # ── Stock recommendations / discovery ───────────────────────────────────
-        _REC_PHRASES = (
-            "recommend", "recommendation", "which stocks", "what stocks",
-            "stocks to buy", "stocks to watch", "stocks to invest",
-            "hot stocks", "trending stocks", "popping stocks", "top stocks",
-            "best stocks", "good stocks", "growth stocks", "rising stocks",
+        # Broad phrases only fire when there's explicit stock/market context.
+        # Narrow phrases (containing "stock") always fire.
+        _REC_PHRASES_NARROW = (
+            "which stocks", "what stocks", "stocks to buy", "stocks to watch",
+            "stocks to invest", "hot stocks", "trending stocks", "popping stocks",
+            "top stocks", "best stocks", "good stocks", "growth stocks", "rising stocks",
             "stocks that might", "stocks that could", "invest in stocks",
-            "investing in stocks", "stock picks", "stock tips",
-            "tech stocks", "which tech", "are popping", "are surging",
+            "investing in stocks", "stock picks", "stock tips", "tech stocks",
+        )
+        _REC_PHRASES_BROAD = (
+            "recommend", "recommendation", "which tech", "are popping", "are surging",
             "are rising", "are up", "going up", "on the rise",
         )
-        if any(p in clean for p in _REC_PHRASES):
+        _STOCK_CONTEXT = ("stock", "market", "invest", "share", "equity", "ticker",
+                          "nasdaq", "nyse", "crypto", "bitcoin", "ethereum")
+        _NON_MARKET = ("laptop", "phone", "gaming", "headphone", "tablet", "monitor",
+                       "keyboard", "speaker", "camera", "product", "gadget", "device",
+                       "food", "recipe", "movie", "show", "game", "book", "restaurant")
+        if any(p in clean for p in _REC_PHRASES_NARROW):
             return self._cmd_recommendations()
+        if any(p in clean for p in _REC_PHRASES_BROAD):
+            # Only intercept if there's stock context AND no obvious non-market subject
+            has_stock_ctx = any(w in clean for w in _STOCK_CONTEXT)
+            has_non_market = any(w in clean for w in _NON_MARKET)
+            if has_stock_ctx and not has_non_market:
+                return self._cmd_recommendations()
 
         # ── Obsidian ────────────────────────────────────────────────────────────
         if any(p in clean for p in ("save that research", "save the research", "save last report")):
