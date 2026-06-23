@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --accent:       #00EEFF;
+  --accent-dim:   rgba(0,238,255,0.7);
+  --accent-glow:  rgba(0,238,255,0.15);
+  --text-primary: rgba(255,255,255,0.95);
+  --text-sec:     rgba(255,255,255,0.55);
+  --text-tert:    rgba(255,255,255,0.30);
+  --divider:      rgba(255,255,255,0.07);
+  --item-bg:      rgba(255,255,255,0.04);
+  --item-hover:   rgba(255,255,255,0.08);
+  --green:        #00D26A;
+  --red:          #FF4757;
+  --yellow:       #FFD32A;
+  --card-radius:  0 0 20px 20px;
+}
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Card Body ──────────────────────────────────────────────────────────── */
+#card-body {
+  background: rgba(10, 10, 18, 0.94);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-top: none;
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  position: relative;
+  animation: slideIn 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes slideIn {
+  from { transform: translateY(-8px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+@keyframes dismissOut {
+  from { transform: translateY(0) scale(1);    opacity: 1; }
+  to   { transform: translateY(-8px) scale(0.96); opacity: 0; }
+}
+
+.dismissing { animation: dismissOut 240ms ease-in both; }
+
+/* ── Noise texture overlay ──────────────────────────────────────────────── */
+#card-body::after {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: var(--card-radius);
+  z-index: 0;
+}
+
+/* ── Scrollable content ─────────────────────────────────────────────────── */
+#content {
+  position: relative;
+  z-index: 1;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  padding-bottom: 6px;
+}
+#content::-webkit-scrollbar { width: 3px; }
+#content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+/* ── Countdown bar ──────────────────────────────────────────────────────── */
+#countdown-wrap {
+  height: 2px;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+#countdown-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), rgba(0,238,255,0.3));
+  transform-origin: left;
+  transition: none;
+}
+
+/* ── Shared item styles ─────────────────────────────────────────────────── */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--divider);
+  transition: background 150ms ease;
+  animation: fadeUp 320ms ease both;
+}
+.item:last-child { border-bottom: none; }
+.item:hover { background: var(--item-hover); }
+
+@keyframes fadeUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.item-image {
+  width: 72px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.06);
+  animation: blurIn 400ms ease both;
+}
+@keyframes blurIn {
+  from { filter: blur(8px); opacity: 0.4; }
+  to   { filter: blur(0);   opacity: 1; }
+}
+
+.item-placeholder {
+  width: 72px; height: 56px;
+  border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  background: linear-gradient(135deg, rgba(0,238,255,0.15), rgba(136,68,255,0.15));
+}
+
+.item-body { flex: 1; min-width: 0; }
+.item-title { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.item-sub   { font-size: 11px; color: var(--text-sec); margin-top: 2px; line-height: 1.3; }
+.item-meta  { font-size: 10px; color: var(--text-tert); margin-top: 3px; }
+
+/* ── Stars ──────────────────────────────────────────────────────────────── */
+.stars { color: var(--accent); font-size: 11px; letter-spacing: 0.5px; }
+
+/* ── Price ──────────────────────────────────────────────────────────────── */
+.price { font-size: 14px; font-weight: 700; color: var(--accent); margin-top: 3px; }
+.price-change {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 5px; border-radius: 4px; margin-left: 6px;
+}
+.price-change.up   { background: rgba(0,210,106,0.15); color: var(--green); }
+.price-change.down { background: rgba(255,71,87,0.15);  color: var(--red); }
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn-row { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.btn {
+  font-size: 10px; font-weight: 600;
+  padding: 4px 9px; border-radius: 6px; border: none;
+  cursor: pointer; transition: all 120ms ease;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.3px;
+}
+.btn:hover { background: rgba(0,238,255,0.18); color: var(--accent); }
+.btn.primary { background: rgba(0,238,255,0.12); color: var(--accent); }
+
+/* ── Divider ────────────────────────────────────────────────────────────── */
+.divider { height: 1px; background: var(--divider); margin: 0 16px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: STOCK
+   ════════════════════════════════════════════════════════════════════════════ */
+.stock-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  animation: fadeUp 320ms ease both;
+  transition: background 150ms ease;
+}
+.stock-item:last-child { border-bottom: none; }
+.stock-item:hover { background: var(--item-hover); }
+
+.stock-row1 { display: flex; align-items: baseline; justify-content: space-between; }
+.stock-ticker { font-family: 'SF Mono', 'Menlo', monospace; font-size: 16px; font-weight: 700; }
+.stock-price  { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.stock-row2 { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.stock-name  { font-size: 11px; color: var(--text-sec); }
+.stock-change {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 12px; font-weight: 600;
+  padding: 2px 8px; border-radius: 6px;
+}
+.stock-change.up   { background: rgba(0,210,106,0.15); color: var(--green); }
+.stock-change.down { background: rgba(255,71,87,0.15);  color: var(--red); }
+
+.stock-bar-wrap { margin-top: 6px; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow:hidden; }
+.stock-bar-fill { height:100%; border-radius:2px; }
+.stock-meta { font-size: 10px; color: var(--text-tert); margin-top: 4px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: WEATHER
+   ════════════════════════════════════════════════════════════════════════════ */
+.weather-current {
+  padding: 20px 16px 14px;
+  background: linear-gradient(135deg, rgba(0,100,200,0.12), rgba(0,50,100,0.06));
+}
+.weather-loc  { font-size: 11px; color: var(--text-tert); text-transform: uppercase; letter-spacing: 1px; }
+.weather-main { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+.weather-icon { font-size: 48px; line-height: 1; }
+.weather-temp { font-size: 42px; font-weight: 300; color: var(--text-primary); line-height: 1; }
+.weather-cond { font-size: 14px; color: var(--text-sec); margin-top: 2px; }
+.weather-details {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 10px;
+}
+.weather-detail { font-size: 11px; color: var(--text-sec); }
+.weather-detail span { color: var(--accent); font-weight: 600; }
+
+.weather-forecast {
+  display: flex; justify-content: space-between;
+  padding: 14px 16px; border-top: 1px solid var(--divider);
+}
+.forecast-day { text-align: center; }
+.forecast-label { font-size: 10px; color: var(--text-tert); text-transform: uppercase; letter-spacing: 1px; }
+.forecast-icon  { font-size: 20px; margin: 4px 0; }
+.forecast-temp  { font-size: 13px; font-weight: 600; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: RECIPE
+   ════════════════════════════════════════════════════════════════════════════ */
+.recipe-header {
+  padding: 16px 16px 12px;
+  background: linear-gradient(135deg, rgba(255,165,0,0.06), rgba(255,100,0,0.04));
+}
+.recipe-title { font-size: 15px; font-weight: 700; }
+.recipe-meta  { display:flex; gap:14px; margin-top:7px; flex-wrap:wrap; }
+.recipe-tag   { font-size: 11px; color: var(--text-sec); }
+.recipe-tag span { color: var(--accent); font-weight:600; }
+
+.recipe-section { padding: 12px 16px; border-top: 1px solid var(--divider); }
+.recipe-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  color: var(--text-tert); text-transform: uppercase; margin-bottom: 8px;
+}
+.recipe-ingredient {
+  display:flex; align-items:center; gap:8px;
+  font-size: 12px; color: var(--text-sec);
+  padding: 3px 0;
+}
+.recipe-ingredient::before { content:'•'; color:var(--accent); font-size:8px; }
+.recipe-step {
+  display:flex; gap:10px; margin-bottom:8px; align-items:flex-start;
+  animation: fadeUp 300ms ease both;
+}
+.recipe-step-num {
+  width: 22px; height: 22px; flex-shrink:0;
+  background: rgba(0,238,255,0.12); color: var(--accent);
+  border-radius: 50%; display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700;
+}
+.recipe-step-text { font-size: 12px; color: var(--text-sec); line-height: 1.5; padding-top:2px; }
+
+.recipe-actions {
+  display:flex; gap:8px; padding:12px 16px;
+  border-top: 1px solid var(--divider);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: COMPARISON
+   ════════════════════════════════════════════════════════════════════════════ */
+.comp-header {
+  display:grid; grid-template-columns: 1fr 1fr 1fr;
+  padding: 12px 16px; gap:8px;
+  border-bottom: 1px solid var(--divider);
+}
+.comp-header-label { font-size:11px; color:var(--text-tert); }
+.comp-col-name  { font-size:12px; font-weight:700; text-align:center; }
+
+.comp-row {
+  display:grid; grid-template-columns: 1fr 1fr 1fr;
+  padding: 9px 16px; gap:8px; align-items:center;
+  border-bottom: 1px solid var(--divider);
+  animation: fadeUp 300ms ease both;
+}
+.comp-row:last-child { border-bottom:none; }
+.comp-row:hover { background: var(--item-hover); }
+.comp-feature { font-size:12px; color:var(--text-sec); }
+.comp-val { font-size:12px; text-align:center; }
+.comp-val.winner { color: var(--accent); font-weight:700; }
+.comp-check { color:var(--accent); font-size:13px; }
+
+.comp-footer {
+  padding:11px 16px;
+  border-top:1px solid var(--divider);
+  font-size:11px; color:var(--text-sec);
+  background: rgba(0,238,255,0.04);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: LIST
+   ════════════════════════════════════════════════════════════════════════════ */
+.list-item {
+  display:flex; gap:14px; align-items:flex-start;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  transition: background 150ms ease;
+  animation: fadeUp 300ms ease both;
+}
+.list-item:last-child { border-bottom:none; }
+.list-item:hover { background: var(--item-hover); }
+.list-num {
+  font-size: 18px; font-weight: 800;
+  color: var(--accent); min-width: 24px;
+  line-height: 1.2;
+}
+.list-body {}
+.list-title  { font-size:13px; font-weight:600; line-height:1.35; }
+.list-detail { font-size:11px; color:var(--text-sec); margin-top:3px; line-height:1.4; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: NEWS
+   ════════════════════════════════════════════════════════════════════════════ */
+/* Uses .item base */
+.news-headline { font-size:13px; font-weight:600; line-height:1.35; }
+.news-summary  { font-size:11px; color:var(--text-sec); margin-top:2px; }
+.news-source   { font-size:10px; color:var(--text-tert); margin-top:4px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: MEDIA
+   ════════════════════════════════════════════════════════════════════════════ */
+.media-item {
+  display:flex; gap:14px; align-items:flex-start;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  transition: background 150ms ease;
+  animation: fadeUp 300ms ease both;
+}
+.media-item:last-child { border-bottom:none; }
+.media-item:hover { background: var(--item-hover); }
+.media-poster {
+  width:72px; height:100px; object-fit:cover;
+  border-radius:10px; flex-shrink:0;
+  background: rgba(255,255,255,0.06);
+}
+.media-poster-ph {
+  width:72px; height:100px; border-radius:10px; flex-shrink:0;
+  background: linear-gradient(160deg, rgba(136,68,255,0.2), rgba(0,238,255,0.1));
+  display:flex; align-items:center; justify-content:center; font-size:28px;
+}
+.media-title   { font-size:14px; font-weight:700; line-height:1.3; }
+.media-genre   { font-size:11px; color:var(--text-sec); margin-top:3px; }
+.media-rating  { margin-top:4px; }
+.media-quote   { font-style:italic; font-size:11px; color:var(--text-sec); margin-top:5px; line-height:1.4; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMPLATE: PRODUCT (uses .item + overrides)
+   ════════════════════════════════════════════════════════════════════════════ */
+/* inherits .item */
+</style>
+</head>
+<body>
+<div id="card-body">
+  <div id="content"></div>
+  <div id="countdown-wrap"><div id="countdown-bar"></div></div>
+</div>
+
+<script>
+'use strict';
+
+// ── Countdown ────────────────────────────────────────────────────────────────
+let _countdownTimer = null;
+let _countdownRemaining = 0;
+
+function startCountdown(seconds) {
+  _countdownRemaining = seconds;
+  const bar = document.getElementById('countdown-bar');
+  if (!bar) return;
+  bar.style.transition = 'none';
+  bar.style.transform  = 'scaleX(1)';
+  void bar.offsetWidth;
+  bar.style.transition = `transform ${seconds}s linear`;
+  bar.style.transform  = 'scaleX(0)';
+  clearInterval(_countdownTimer);
+  _countdownTimer = setInterval(() => {
+    _countdownRemaining--;
+    if (_countdownRemaining <= 0) {
+      clearInterval(_countdownTimer);
+      navigate('dismiss');
+    }
+  }, 1000);
+}
+
+function stopCountdown() {
+  clearInterval(_countdownTimer);
+  const bar = document.getElementById('countdown-bar');
+  if (bar) { bar.style.transition = 'none'; bar.style.transform = 'scaleX(0)'; }
+}
+
+// ── Navigation helper (JS → Python via atlas:// URL) ─────────────────────────
+function navigate(action, payload) {
+  const url = payload ? `atlas://${action}/${payload}` : `atlas://${action}`;
+  window.location.href = url;
+}
+
+// ── Dismiss animation ────────────────────────────────────────────────────────
+function dismissAnimation() {
+  const body = document.getElementById('card-body');
+  if (body) { body.classList.add('dismissing'); }
+}
+
+// ── Image update (called from Python after async fetch) ───────────────────────
+function updateImage(index, dataUrl) {
+  const imgs = document.querySelectorAll('[data-img-index="' + index + '"]');
+  imgs.forEach(el => {
+    if (el.tagName === 'IMG') {
+      el.src = dataUrl;
+      el.style.animation = 'blurIn 400ms ease both';
+    } else {
+      // Replace placeholder div with img
+      const img = document.createElement('img');
+      img.className = el.className.replace('placeholder', 'image');
+      img.style     = el.style.cssText;
+      img.src       = dataUrl;
+      img.setAttribute('data-img-index', index);
+      img.style.animation = 'blurIn 400ms ease both';
+      el.parentNode.replaceChild(img, el);
+    }
+  });
+}
+
+// ── Hover: pause countdown ────────────────────────────────────────────────────
+document.getElementById('card-body').addEventListener('mouseenter', () => {
+  clearInterval(_countdownTimer);
+  const bar = document.getElementById('countdown-bar');
+  if (bar) { bar.style.transition = 'none'; }
+  navigate('hover_start');
+});
+document.getElementById('card-body').addEventListener('mouseleave', () => {
+  navigate('hover_end');
+});
+
+// ── Star renderer ─────────────────────────────────────────────────────────────
+function renderStars(rating) {
+  if (!rating) return '';
+  let s = '';
+  for (let i = 1; i <= 5; i++) {
+    if (rating >= i) s += '★';
+    else if (rating >= i - 0.5) s += '½';
+    else s += '☆';
+  }
+  return `<span class="stars">${s}</span> <span style="font-size:11px;color:var(--text-tert)">${rating.toFixed(1)}</span>`;
+}
+
+// ── Placeholder emoji by category ─────────────────────────────────────────────
+const PLACEHOLDERS = {
+  product: '📦', news: '📰', media: '🎬', list: '💡',
+  game: '🎮', music: '🎵', show: '📺', movie: '🎬'
+};
+
+function placeholder(index, category, cssClass) {
+  const emoji = PLACEHOLDERS[category] || '🖼';
+  return `<div class="${cssClass} item-placeholder" data-img-index="${index}">${emoji}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TEMPLATE RENDERERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderProduct(data) {
+  const items = (data.items || []).slice(0, 6);
+  return items.map((item, i) => {
+    const priceChange = item.price_change
+      ? `<span class="price-change ${item.price_change.startsWith('-') ? 'down' : 'up'}">${item.price_change}</span>` : '';
+    const img = `<img class="item-image" data-img-index="${i}"
+                       src="" alt="" onerror="this.style.display='none'">`;
+    const actions = [
+      {label:'Search', url:`https://duckduckgo.com/?q=${encodeURIComponent(item.title || '')}`},
+      {label:'More info', voice:`Tell me more about ${item.title}`}
+    ];
+    const btnHtml = actions.map(a =>
+      `<button class="btn ${a.url ? 'primary' : ''}" onclick="handleBtn(${JSON.stringify(a)})">${a.label}</button>`
+    ).join('');
+    return `
+      <div class="item" onclick="navigate('item','${i}')">
+        ${img}
+        <div class="item-body">
+          <div class="item-title">${esc(item.title || '')}</div>
+          <div class="item-sub">${esc(item.subtitle || item.detail || '')}</div>
+          ${item.rating ? `<div style="margin-top:3px">${renderStars(item.rating)}</div>` : ''}
+          ${item.price ? `<div class="price">${esc(item.price)}${priceChange}</div>` : ''}
+          <div class="btn-row">${btnHtml}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderStock(data) {
+  const items = (data.items || []).slice(0, 4);
+  return items.map((item, i) => {
+    const isUp = item.up !== false && !String(item.change || '').startsWith('-');
+    const arrow = isUp ? '▲' : '▼';
+    const cls   = isUp ? 'up' : 'down';
+    return `
+      <div class="stock-item" onclick="navigate('item','${i}')" style="animation-delay:${i*50}ms">
+        <div class="stock-row1">
+          <span class="stock-ticker" style="color:var(--accent)">${esc(item.ticker || '')}</span>
+          <span class="stock-price">${esc(item.price || '')}</span>
+        </div>
+        <div class="stock-row2">
+          ${item.name ? `<span class="stock-name">${esc(item.name)}</span>` : ''}
+          <span class="stock-change ${cls}">${arrow} ${esc(item.change || '0%')}</span>
+        </div>
+        <div class="stock-bar-wrap">
+          <div class="stock-bar-fill" style="width:${Math.random()*60+30}%;background:var(--${cls === 'up' ? 'green' : 'red'})"></div>
+        </div>
+        <div class="stock-meta">${item.high ? `H: ${item.high}  L: ${item.low || '–'}  ` : ''}${item.volume ? `Vol: ${item.volume}` : ''}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderWeather(data) {
+  const cur  = data.current || {};
+  const days = (data.forecast || []).slice(0, 5);
+  const condIcons = {
+    'sunny':'☀️','cloudy':'☁️','rainy':'🌧','stormy':'⛈',
+    'partly cloudy':'⛅','overcast':'🌥','clear':'🌤','foggy':'🌫','windy':'💨','snowy':'❄️'
+  };
+  const icon = condIcons[(cur.condition || '').toLowerCase()] || '🌤';
+  const forecastHtml = days.length ? `
+    <div class="weather-forecast">
+      ${days.map(d => `
+        <div class="forecast-day">
+          <div class="forecast-label">${esc(d.day || '')}</div>
+          <div class="forecast-icon">⛅</div>
+          <div class="forecast-temp">${esc(d.temp || '')}</div>
+        </div>`).join('')}
+    </div>` : '';
+  const details = [cur.feels_like, cur.humidity, cur.wind, cur.uv].filter(Boolean);
+  return `
+    <div class="weather-current">
+      <div class="weather-loc">${esc(data.location || 'Your Location')} &nbsp;·&nbsp; NOW</div>
+      <div class="weather-main">
+        <span class="weather-icon">${icon}</span>
+        <div>
+          <div class="weather-temp">${esc(cur.temp || 'N/A')}</div>
+          <div class="weather-cond">${esc(cur.condition || '')}</div>
+        </div>
+      </div>
+      <div class="weather-details">
+        ${details.map(d => `<span class="weather-detail">${esc(d)}</span>`).join('')}
+      </div>
+    </div>
+    ${forecastHtml}`;
+}
+
+function renderRecipe(data) {
+  const ingrs = (data.ingredients || []).slice(0, 12);
+  const steps = (data.steps || []).slice(0, 8);
+  return `
+    <div class="recipe-header">
+      <div class="recipe-title">${esc(data.title || 'Recipe')}</div>
+      <div class="recipe-meta">
+        ${data.time     ? `<span class="recipe-tag">⏱ <span>${esc(data.time)}</span></span>` : ''}
+        ${data.servings ? `<span class="recipe-tag">👥 <span>${esc(data.servings)}</span></span>` : ''}
+        <span class="recipe-tag">⭐ <span>Easy</span></span>
+      </div>
+    </div>
+    ${ingrs.length ? `
+    <div class="recipe-section">
+      <div class="recipe-section-title">Ingredients</div>
+      ${ingrs.map(i => `<div class="recipe-ingredient">${esc(i)}</div>`).join('')}
+    </div>` : ''}
+    ${steps.length ? `
+    <div class="recipe-section">
+      <div class="recipe-section-title">Steps</div>
+      ${steps.map((s, i) => `
+        <div class="recipe-step" style="animation-delay:${i*40}ms">
+          <div class="recipe-step-num">${i+1}</div>
+          <div class="recipe-step-text">${esc(s)}</div>
+        </div>`).join('')}
+    </div>` : ''}
+    <div class="recipe-actions">
+      <button class="btn primary" onclick="navigate('action', encodeURIComponent(JSON.stringify({voice:'Read me the recipe steps'})))">Read Steps Aloud</button>
+      <button class="btn" onclick="navigate('action', encodeURIComponent(JSON.stringify({voice:'Save this recipe to Obsidian'})))">Save to Notes</button>
+    </div>`;
+}
+
+function renderComparison(data) {
+  const rows    = (data.rows || []).slice(0, 8);
+  const colA    = data.option_a || 'Option A';
+  const colB    = data.option_b || 'Option B';
+  let winsA = 0, winsB = 0;
+  const rowHtml = rows.map((r, i) => {
+    // Simple heuristic: longer value or explicit ✓ wins
+    const aWins = r.winner === 'a' || (!r.winner && r.a && r.a.length >= r.b.length);
+    if (aWins) winsA++; else if (r.b) winsB++;
+    return `
+      <div class="comp-row" style="animation-delay:${i*40}ms">
+        <span class="comp-feature">${esc(r.feature || '')}</span>
+        <span class="comp-val ${aWins ? 'winner' : ''}">${esc(r.a || '–')} ${aWins ? '<span class="comp-check">✓</span>' : ''}</span>
+        <span class="comp-val ${!aWins && r.b ? 'winner' : ''}">${esc(r.b || '–')} ${!aWins && r.b ? '<span class="comp-check">✓</span>' : ''}</span>
+      </div>`;
+  }).join('');
+  const winner = winsA > winsB ? colA : winsB > winsA ? colB : 'Tied';
+  return `
+    <div class="comp-header">
+      <span class="comp-header-label">Feature</span>
+      <span class="comp-col-name" style="color:var(--accent)">${esc(colA)}</span>
+      <span class="comp-col-name" style="color:rgba(255,255,255,0.6)">${esc(colB)}</span>
+    </div>
+    ${rowHtml}
+    <div class="comp-footer">
+      🏆 <strong>${esc(winner)}</strong> wins ${Math.max(winsA,winsB)} of ${rows.length} categories
+    </div>`;
+}
+
+function renderNews(data) {
+  const items = (data.items || []).slice(0, 6);
+  return items.map((item, i) => {
+    const img = `<img class="item-image" data-img-index="${i}" src="" alt="" onerror="this.style.display='none'">`;
+    return `
+      <div class="item" onclick="navigate('item','${i}')" style="animation-delay:${i*40}ms">
+        ${img}
+        <div class="item-body">
+          <div class="news-headline">${esc(item.title || '')}</div>
+          <div class="news-summary">${esc(item.detail || '')}</div>
+          <div class="news-source">${item.source ? esc(item.source) + ' · ' : ''}${esc(item.time || '')}</div>
+          <div class="btn-row">
+            <button class="btn primary" onclick="event.stopPropagation();handleBtn({url:'https://duckduckgo.com/?q=${encodeURIComponent((item.title||'').slice(0,50))}'})">Read</button>
+            <button class="btn" onclick="event.stopPropagation();navigate('action',encodeURIComponent(JSON.stringify({voice:'Summarise this article: ${(item.title||'').replace(/'/g,'').slice(0,60)}'})))">Summary</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderMedia(data) {
+  const items    = (data.items || []).slice(0, 5);
+  const mtype    = (data.media_type || 'Movie').toLowerCase();
+  const btnLabel = {game:'Steam', movie:'IMDb', show:'IMDb', music:'Spotify'}[mtype] || 'Search';
+  return items.map((item, i) => {
+    const img = `<img class="media-poster" data-img-index="${i}" src="" alt="" onerror="this.style.display='none'">`;
+    return `
+      <div class="media-item" onclick="navigate('item','${i}')" style="animation-delay:${i*50}ms">
+        ${img}
+        <div class="item-body">
+          <div class="media-title">${esc(item.title || '')}</div>
+          <div class="media-genre">${esc(item.detail || '')}</div>
+          ${item.rating ? `<div class="media-rating">${renderStars(item.rating)}</div>` : ''}
+          <div class="btn-row">
+            <button class="btn primary" onclick="event.stopPropagation();handleBtn({url:'https://duckduckgo.com/?q=${encodeURIComponent((item.title||'').slice(0,40))+' '+(mtype)}'})">
+              ${btnLabel}
+            </button>
+            <button class="btn" onclick="event.stopPropagation();navigate('action',encodeURIComponent(JSON.stringify({voice:'Tell me more about ${(item.title||'').replace(/'/g,'').slice(0,40)}'})))">More</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderList(data) {
+  const items = (data.items || []).slice(0, 8);
+  return items.map((item, i) => `
+    <div class="list-item" onclick="navigate('item','${i}')" style="animation-delay:${i*40}ms">
+      <div class="list-num">${i+1}</div>
+      <div class="list-body">
+        <div class="list-title">${esc(item.title || '')}</div>
+        ${item.detail ? `<div class="list-detail">${esc(item.detail)}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ── Main render dispatcher ────────────────────────────────────────────────────
+function renderCard(data) {
+  const content = document.getElementById('content');
+  if (!content) return;
+
+  const renderers = {
+    product:    renderProduct,
+    stock:      renderStock,
+    weather:    renderWeather,
+    recipe:     renderRecipe,
+    comparison: renderComparison,
+    news:       renderNews,
+    media:      renderMedia,
+    list:       renderList,
+  };
+
+  const fn = renderers[data.template] || renderList;
+  content.innerHTML = fn(data);
+
+  if (data.auto_dismiss_secs > 0) {
+    startCountdown(data.auto_dismiss_secs);
+  }
+}
+
+// ── Button action handler ─────────────────────────────────────────────────────
+function handleBtn(action) {
+  navigate('action', encodeURIComponent(JSON.stringify(action)));
+}
+
+// ── HTML escape ───────────────────────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+</script>
+</body>
+</html>

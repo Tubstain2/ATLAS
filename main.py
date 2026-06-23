@@ -95,6 +95,7 @@ from learning_loop import LearningLoop
 from context_files import ContextFilesModule
 from honcho import HonchoModule
 from pipeline import ATLASVoicePipeline, EchoGate
+from smart_card import SmartCardManager
 from planner import ATLASPlanner
 from code_agent import ATLASCodeAgent
 from offline import ATLASOfflineMode
@@ -937,6 +938,35 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
         brain._handle_meta = _meta_with_planner
         window._planner = planner
+
+    # ── Smart Card (floating visualizer) ─────────────────────────────────────
+    smart_card_mgr = SmartCardManager(
+        config, speak_cb=vm.speak, vault_brain=vault_brain, brain=brain,
+    )
+
+    # Wire into brain.handle — show card after every response (simultaneous with speech)
+    _orig_handle_sc = brain.handle
+
+    def _handle_with_smart_card(text: str) -> str:
+        response = _orig_handle_sc(text)
+        if response and config.get('smart_card_enabled', True):
+            _r = response
+            QTimer.singleShot(0, lambda: smart_card_mgr.on_response(text, _r))
+        return response
+
+    brain.handle = _handle_with_smart_card
+    vm.set_response_callback(_handle_with_smart_card)
+
+    _orig_meta_sc = brain._handle_meta
+
+    def _meta_with_smart_card(text: str):
+        resp = smart_card_mgr.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_sc(text)
+
+    brain._handle_meta = _meta_with_smart_card
+    window._smart_card_mgr = smart_card_mgr
 
     # Keep references so they aren't GC'd
     window._core           = core
