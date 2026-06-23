@@ -665,10 +665,10 @@ class SmartCardWindow(QWidget):
         else:
             self._pending_card_json = card_json
 
-        # Auto-dismiss: Python timer fires regardless of page load state
-        if not self._pinned:
-            secs = int(card_data.get('auto_dismiss_secs',
-                       self._config.get('smart_card_dismiss_seconds', 30)))
+        # Auto-dismiss: skipped when secs=0 (manual-close mode) or card is pinned
+        secs = int(card_data.get('auto_dismiss_secs',
+                   self._config.get('smart_card_dismiss_seconds', 30)))
+        if not self._pinned and secs > 0:
             self._start_countdown(secs)
 
         # Fetch images async
@@ -936,6 +936,7 @@ class SmartCardManager:
         self._max_cards    = int(config.get('smart_card_max_visible', 3))
         self._dismiss_secs = int(config.get('smart_card_dismiss_seconds', 30))
 
+        self._auto_dismiss = bool(config.get('smart_card_auto_dismiss', True))
         self._classifier   = ContentClassifier()
         self._builder      = CardDataBuilder()
         self._cards: List[SmartCardWindow] = []
@@ -968,7 +969,7 @@ class SmartCardManager:
                  template, len(response.split()))
         card_data = self._builder.build(
             response, template, query=query,
-            dismiss_secs=self._dismiss_secs,
+            dismiss_secs=self._dismiss_secs if self._auto_dismiss else 0,
         )
         self._bridge.show_card.emit(card_data)   # thread-safe; delivered on Qt main thread
 

@@ -249,8 +249,8 @@ context7_max_tokens: 5000             # max tokens of docs to inject per request
 # ── Smart Card visualizer widget ─────────────────────────────────────────────
 smart_card_enabled: true
 smart_card_position: top-right        # top-right | top-left | bottom-right | bottom-left
-smart_card_auto_dismiss: true
-smart_card_dismiss_seconds: 30        # seconds before card auto-closes
+smart_card_auto_dismiss: false
+smart_card_dismiss_seconds: 30        # seconds before card auto-closes (ignored when auto_dismiss is false)
 smart_card_max_visible: 3             # max simultaneous cards
 smart_card_image_enabled: true        # fetch images for products/news/media
 smart_card_image_cache_hours: 24      # hours to cache fetched images
