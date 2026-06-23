@@ -906,6 +906,11 @@ class _TitleBar(QWidget):
 
 # ── Smart Card Manager ─────────────────────────────────────────────────────────
 
+class _CardSignalBridge(QObject):
+    """Thread-safe signal bridge: voice worker → Qt main thread."""
+    show_card = pyqtSignal(dict)
+
+
 class SmartCardManager:
     """
     Orchestrates up to 3 simultaneous Smart Cards.
@@ -927,45 +932,61 @@ class SmartCardManager:
         self._last_response: str = ''
         self._last_card: Optional[SmartCardWindow] = None
 
+        # Signal bridge — AutoConnection delivers to Qt main thread from any thread
+        self._bridge = _CardSignalBridge()
+        self._bridge.show_card.connect(self._show)
+
         log.info("SmartCardManager: initialised (enabled=%s, max=%d).",
                  self._enabled, self._max_cards)
 
     # ── Main entry (called after every brain response) ─────────────────────────
 
     def on_response(self, query: str, response: str) -> None:
-        """Called from brain.handle wrapper. Runs on any thread — posts to Qt."""
+        """Safe to call from any thread — signal bridge delivers to Qt main thread."""
         self._last_response = response
         if not self._enabled:
+            log.info("SmartCard: disabled in config — skipping.")
             return
         if not self._classifier.should_show_card(response):
+            template = self._classifier.classify(response)
+            log.info("SmartCard: should_show_card=False (template=%s, words=%d) — skipping.",
+                     template, len(response.split()))
             return
 
         template = self._classifier.classify(response)
         if not template:
+            log.info("SmartCard: no template matched — skipping.")
             return
 
+        log.info("SmartCard: MATCHED template=%s, words=%d — emitting signal.",
+                 template, len(response.split()))
         card_data = self._builder.build(
             response, template, query=query,
             dismiss_secs=self._dismiss_secs,
         )
-        QTimer.singleShot(0, lambda: self._show(card_data))
+        self._bridge.show_card.emit(card_data)   # thread-safe; delivered on Qt main thread
 
     def _show(self, card_data: dict) -> None:
         """Create and show a new card. Must run on Qt main thread."""
-        if len(self._cards) >= self._max_cards:
-            # Dismiss oldest
-            if self._cards:
-                self._cards[0].dismiss()
+        log.info("SmartCard: _show() called on thread=%s, active=%d",
+                 __import__('threading').current_thread().name, len(self._cards))
+        try:
+            if len(self._cards) >= self._max_cards:
+                if self._cards:
+                    self._cards[0].dismiss()
 
-        card = SmartCardWindow(self._config, self._speak, self._vb)
-        card.setProperty('card_index', len(self._cards))
-        card.dismissed.connect(self._on_card_dismissed)
-        self._cards.append(card)
-        self._last_card = card
-        card.show_card(card_data)
+            card = SmartCardWindow(self._config, self._speak, self._vb)
+            card.setProperty('card_index', len(self._cards))
+            card.dismissed.connect(self._on_card_dismissed)
+            self._cards.append(card)
+            self._last_card = card
+            card.show_card(card_data)
 
-        log.info("SmartCard: showing %s card (%d active).",
-                 card_data.get('template'), len(self._cards))
+            log.info("SmartCard: window shown, template=%s, pos=(%d,%d), size=(%d,%d).",
+                     card_data.get('template'),
+                     card.x(), card.y(), card.width(), card.height())
+        except Exception as exc:
+            log.exception("SmartCard: _show() crashed: %s", exc)
 
     def _on_card_dismissed(self, card: SmartCardWindow) -> None:
         if card in self._cards:

@@ -950,8 +950,11 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
     def _handle_with_smart_card(text: str) -> str:
         response = _orig_handle_sc(text)
         if response and config.get('smart_card_enabled', True):
-            _r = response
-            QTimer.singleShot(0, lambda: smart_card_mgr.on_response(text, _r))
+            log.info("SmartCard: calling on_response for %d-word reply.", len(response.split()))
+            smart_card_mgr.on_response(text, response)   # signal bridge handles thread safety
+        else:
+            log.info("SmartCard: skipped — response=%r, enabled=%r",
+                     bool(response), config.get('smart_card_enabled', True))
         return response
 
     brain.handle = _handle_with_smart_card
