@@ -255,3 +255,28 @@ smart_card_max_visible: 3             # max simultaneous cards
 smart_card_image_enabled: true        # fetch images for products/news/media
 smart_card_image_cache_hours: 24      # hours to cache fetched images
 
+# ── Screen Recorder ───────────────────────────────────────────────────────────
+recordings_folder: "~/Desktop/ATLAS_Projects/Recordings"
+recording_fps: 30                     # ffmpeg capture framerate
+commentary_interval_seconds: 3        # seconds between AI screenshot narrations
+
+# ── Personal Coach ────────────────────────────────────────────────────────────
+coach_enabled: true
+coach_max_active_goals: 5             # maximum simultaneous coaching goals
+coach_checkin_reminder_days: 2        # days of silence before proactive check-in nudge
+
+# ── Debate Engine ─────────────────────────────────────────────────────────────
+debate_enabled: true
+debate_auto_save_obsidian: true       # auto-save all debate results to vault
+
+# ── Socratic Tutor ────────────────────────────────────────────────────────────
+tutor_enabled: true
+tutor_questions_per_session: 20       # Socratic questions before session ends
+tutor_summary_interval: 5             # generate synthesis summary every N questions
+tutor_save_notes: true                # auto-save session notes to Obsidian vault
+
+# ── Academic Research ─────────────────────────────────────────────────────────
+research_enabled: true
+research_max_results: 10              # max papers returned per search (across all sources)
+research_auto_save_obsidian: false    # auto-save all research to vault (manual save = false)
+

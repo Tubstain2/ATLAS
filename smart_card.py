@@ -95,17 +95,26 @@ class ContentClassifier:
                     'refresh rate', 'performance', 'budget', 'option', 'recommendation',
                     'under $', 'priced at', 'costs', 'starting at', 'gigabyte', 'asus',
                     'razer', 'msi', 'alienware', 'lenovo legion', 'dell xps', 'macbook'}
+    _DEBATE_KW   = {'debate', 'for:', 'against:', 'bull case', 'bear case',
+                    'argument for', 'argument against', 'counterargument',
+                    'steelman', 'verdict:', 'recommendation:', 'on the other hand',
+                    'pros:', 'cons:', 'supporting', 'opposing', 'synthesis'}
+    _RESEARCH_KW = {'arxiv', 'semantic scholar', 'citation', 'abstract', 'doi',
+                    'published in', 'journal', 'paper:', 'study:', 'authors:',
+                    'university', 'proceedings', 'findings:', 'literature'}
 
     def classify(self, text: str) -> Optional[str]:
         lower = text.lower()
-        if self._is_weather(lower, text): return 'weather'
-        if self._is_stock(lower, text):   return 'stock'
-        if self._is_recipe(lower):        return 'recipe'
-        if self._is_comparison(lower):    return 'comparison'
-        if self._is_news(lower):          return 'news'
-        if self._is_media(lower):         return 'media'
-        if self._is_product(lower, text): return 'product'
-        if self._is_list(text):           return 'list'
+        if self._is_weather(lower, text):  return 'weather'
+        if self._is_stock(lower, text):    return 'stock'
+        if self._is_recipe(lower):         return 'recipe'
+        if self._is_debate(lower):         return 'debate'
+        if self._is_research(lower):       return 'research'
+        if self._is_comparison(lower):     return 'comparison'
+        if self._is_news(lower):           return 'news'
+        if self._is_media(lower):          return 'media'
+        if self._is_product(lower, text):  return 'product'
+        if self._is_list(text):            return 'list'
         return None
 
     def _score(self, lower: str, kw_set: set) -> int:
@@ -135,6 +144,12 @@ class ContentClassifier:
     def _is_product(self, lower: str, orig: str) -> bool:
         score = self._score(lower, self._PRODUCT_KW)
         return score >= 2 or (score >= 1 and bool(self._PRICE.search(orig)))
+
+    def _is_debate(self, lower: str) -> bool:
+        return self._score(lower, self._DEBATE_KW) >= 2
+
+    def _is_research(self, lower: str) -> bool:
+        return self._score(lower, self._RESEARCH_KW) >= 2
 
     def _is_list(self, text: str) -> bool:
         return len(self._NUMBERED.findall(text)) >= 3
@@ -176,12 +191,13 @@ class CardDataBuilder:
     _ICONS = {
         'product': '🛍', 'stock': '📈', 'news': '📰',
         'comparison': '⚖️', 'list': '💡', 'weather': '⛅',
-        'media': '🎬', 'recipe': '🍳',
+        'media': '🎬', 'recipe': '🍳', 'debate': '⚔️', 'research': '🔬',
     }
     _TITLES = {
         'product': 'Products', 'stock': 'Market Data', 'news': 'Top Headlines',
         'comparison': 'Comparison', 'list': 'Results', 'weather': 'Weather Forecast',
         'media': 'Recommendations', 'recipe': 'Recipe',
+        'debate': 'Debate', 'research': 'Research',
     }
 
     _NUMBERED_RE  = re.compile(
@@ -410,6 +426,52 @@ class CardDataBuilder:
             item['time']   = time_m.group(1) if time_m else ''
             item['image_query'] = f"news {item['title'][:40]}"
         return {'items': items[:6], 'title': 'Top Headlines'}
+
+    def _build_debate(self, text: str, query: str = '') -> dict:
+        # Extract FOR block
+        for_m  = re.search(r'(?:for|bull case|pros)[:\s]*\n(.*?)(?=\n\s*(?:against|bear case|cons|verdict|synthesis)|$)',
+                            text, re.IGNORECASE | re.DOTALL)
+        against_m = re.search(r'(?:against|bear case|cons)[:\s]*\n(.*?)(?=\n\s*(?:verdict|synthesis|recommendation)|$)',
+                               text, re.IGNORECASE | re.DOTALL)
+        verdict_m = re.search(r'(?:verdict|synthesis|recommendation)[:\s]*\n(.+?)(?:\n\n|$)',
+                               text, re.IGNORECASE | re.DOTALL)
+
+        def parse_args(block: str) -> list:
+            items = []
+            for m in re.finditer(r'(?:^\s*[-•*]|\d+[.)]) *(.+)', block or '', re.MULTILINE):
+                arg = m.group(1).strip()
+                if arg:
+                    items.append(arg[:120])
+            return items[:3] or [block.strip()[:120]] if block else []
+
+        for_args     = parse_args(for_m.group(1))     if for_m     else []
+        against_args = parse_args(against_m.group(1)) if against_m else []
+        verdict      = verdict_m.group(1).strip()[:300] if verdict_m else ''
+
+        topic = query.replace('debate: ', '') if query.startswith('debate:') else query
+        return {'topic': topic or 'Debate', 'for_args': for_args,
+                'against_args': against_args, 'verdict': verdict,
+                'items': [{'title': a, 'detail': ''} for a in for_args + against_args]}
+
+    def _build_research(self, text: str, query: str = '') -> dict:
+        # Parse paper blocks: "Title: X\nAuthors: Y\nYear: Z"
+        papers = []
+        # Pattern: numbered or titled entries with year/citation info
+        for m in re.finditer(
+            r'(?:^\d+[.)]\s*)?(.{10,80}?)\n\s*(?:Authors?|Year|Published)[:\s]+([^\n]+)',
+            text, re.MULTILINE):
+            title = m.group(1).strip()
+            meta  = m.group(2).strip()[:60]
+            if title:
+                papers.append({'title': title, 'detail': meta, 'image_query': ''})
+
+        if not papers:
+            # Fallback: numbered list
+            papers = self._build_list(text, query)['items']
+
+        topic = query.replace('research: ', '') if query.startswith('research:') else query
+        return {'topic': topic or 'Research', 'items': papers[:8],
+                'title': f'Research: {topic[:30]}' if topic else 'Research'}
 
     def _build_media(self, text: str, query: str = '') -> dict:
         items = self._build_list(text, query)['items']

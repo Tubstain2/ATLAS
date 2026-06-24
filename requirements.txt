@@ -111,3 +111,7 @@ sqlalchemy>=2.0.0           # APScheduler SQLite job store (persistent cron acro
 
 # ── Pipecat-inspired pipeline upgrades ────────────────────────────────────────
 noisereduce>=3.0.0          # spectral noise reduction for mic input (pipeline.py)
+
+# ── New capability modules (recorder, coach, debate, tutor, research) ─────────
+ffmpeg-python>=0.2.0        # Python bindings for ffmpeg (screen recorder — ffmpeg binary from brew)
+semanticscholar>=0.6.0      # Semantic Scholar API client (academic research)

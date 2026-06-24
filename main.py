@@ -100,6 +100,11 @@ from planner import ATLASPlanner
 from code_agent import ATLASCodeAgent
 from offline import ATLASOfflineMode
 from context7 import ATLASContext7
+from recorder import ATLASRecorder
+from coach import ATLASCoach
+from debate import ATLASDebate
+from tutor import ATLASTutor
+from research import ATLASResearch
 
 import yaml
 
@@ -970,6 +975,89 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
     brain._handle_meta = _meta_with_smart_card
     window._smart_card_mgr = smart_card_mgr
+
+    # ── Screen Recorder ───────────────────────────────────────────────────────
+    recorder = ATLASRecorder(
+        config, speak_cb=vm.speak, brain=brain,
+        vault_brain=vault_brain, smart_card_mgr=smart_card_mgr,
+    )
+
+    _orig_meta_recorder = brain._handle_meta
+
+    def _meta_with_recorder(text: str):
+        resp = recorder.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_recorder(text)
+
+    brain._handle_meta = _meta_with_recorder
+    window._recorder = recorder
+
+    # ── Personal Coach ────────────────────────────────────────────────────────
+    coach = ATLASCoach(
+        config, speak_cb=vm.speak, brain=brain, vault_brain=vault_brain,
+    )
+
+    _orig_meta_coach = brain._handle_meta
+
+    def _meta_with_coach(text: str):
+        resp = coach.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_coach(text)
+
+    brain._handle_meta = _meta_with_coach
+    window._coach = coach
+
+    # ── Debate Engine ─────────────────────────────────────────────────────────
+    debate = ATLASDebate(
+        config, speak_cb=vm.speak, brain=brain,
+        vault_brain=vault_brain, smart_card_mgr=smart_card_mgr,
+    )
+
+    _orig_meta_debate = brain._handle_meta
+
+    def _meta_with_debate(text: str):
+        resp = debate.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_debate(text)
+
+    brain._handle_meta = _meta_with_debate
+    window._debate = debate
+
+    # ── Socratic Tutor ────────────────────────────────────────────────────────
+    tutor = ATLASTutor(
+        config, speak_cb=vm.speak, brain=brain, vault_brain=vault_brain,
+    )
+
+    _orig_meta_tutor = brain._handle_meta
+
+    def _meta_with_tutor(text: str):
+        resp = tutor.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_tutor(text)
+
+    brain._handle_meta = _meta_with_tutor
+    window._tutor = tutor
+
+    # ── Academic Research ─────────────────────────────────────────────────────
+    research = ATLASResearch(
+        config, speak_cb=vm.speak, brain=brain,
+        vault_brain=vault_brain, smart_card_mgr=smart_card_mgr,
+    )
+
+    _orig_meta_research = brain._handle_meta
+
+    def _meta_with_research(text: str):
+        resp = research.handle(text)
+        if resp is not None:
+            return resp
+        return _orig_meta_research(text)
+
+    brain._handle_meta = _meta_with_research
+    window._research = research
 
     # Keep references so they aren't GC'd
     window._core           = core
