@@ -361,7 +361,7 @@ class ATLASTutor:
 
     # ── Session controls ───────────────────────────────────────────────────────
 
-    def _adjust_difficulty(self, delta: int) -> str:
+    def _adjust_difficulty(self, delta: int) -> Optional[str]:
         if not self._session:
             return None
         self._session.difficulty = max(1, min(5, self._session.difficulty + delta))
@@ -369,9 +369,9 @@ class ATLASTutor:
         direction = "simpler" if delta < 0 else "more advanced"
         return f"Got it — {direction} question coming. " + self._ask_question()
 
-    def _give_hint(self) -> str:
+    def _give_hint(self) -> Optional[str]:
         if not self._session or not self._session.current_question:
-            return None
+            return "No question in progress to hint at, Boss."
         s = self._session
         prompt = (f"For this Socratic question about {s.topic}: '{s.current_question}' "
                   f"Give a small hint that points the student in the right direction "
@@ -382,9 +382,9 @@ class ATLASTutor:
         except Exception:
             return f"Think about the fundamentals of {s.topic}. {s.current_question}"
 
-    def _direct_answer(self) -> str:
+    def _direct_answer(self) -> Optional[str]:
         if not self._session or not self._session.current_question:
-            return None
+            return "No question in progress to answer directly, Boss."
         s = self._session
         s.awaiting_answer = False
         prompt = (f"Give a direct, clear answer to this question about {s.topic}: "

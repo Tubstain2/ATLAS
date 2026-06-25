@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import subprocess
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -260,6 +261,14 @@ class ObsidianModule:
         if any(p in lower for p in ("show my notes", "atlas show notes",
                                      "obsidian summary", "vault summary")):
             return self._vault_summary()
+
+        # ── Knowledge graph ───────────────────────────────────────────────────
+        if any(p in lower for p in ("open obsidian graph", "show knowledge graph",
+                                     "open graph view", "show my knowledge map",
+                                     "open knowledge map", "show obsidian graph",
+                                     "open my knowledge graph", "knowledge graph",
+                                     "map of knowledge", "full map of knowledge")):
+            return self._open_graph_view()
 
         return None
 
@@ -813,6 +822,32 @@ class ObsidianModule:
                 subprocess.run(["open", str(path)], timeout=4, check=False)
             except Exception:
                 pass
+
+    def _open_graph_view(self) -> str:
+        if not self._vault_ready():
+            return f"Obsidian vault isn't configured, {self._user_name}."
+        vault_name = urllib.parse.quote(self._vault.name)
+        uri = f"obsidian://open?vault={vault_name}"
+        try:
+            subprocess.Popen(["open", uri])
+        except Exception as exc:
+            log.error("Obsidian: failed to open vault URI: %s", exc)
+            return f"Couldn't launch Obsidian, {self._user_name}."
+        # AppleScript: activate Obsidian, wait for it to load, then open graph view (Cmd+Shift+G)
+        script = (
+            'tell application "Obsidian" to activate\n'
+            'delay 1.5\n'
+            'tell application "System Events"\n'
+            '    tell process "Obsidian"\n'
+            '        keystroke "g" using {command down, shift down}\n'
+            '    end tell\n'
+            'end tell'
+        )
+        try:
+            subprocess.Popen(["osascript", "-e", script])
+        except Exception as exc:
+            log.debug("Obsidian: AppleScript graph trigger failed: %s", exc)
+        return f"Opening your full knowledge graph in Obsidian, {self._user_name}."
 
     def _cmd_set_vault(self, raw_path: str) -> str:
         raw_path = raw_path.strip().strip('"').strip("'")

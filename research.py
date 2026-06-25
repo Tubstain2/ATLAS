@@ -21,6 +21,7 @@ Voice commands:
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import logging
 import re
 import threading
@@ -160,11 +161,10 @@ class ATLASResearch:
 
     def _start_search(self, topic: str, recent: bool = False, page: int = 1) -> str:
         self._last_topic = topic
-        self._speak(f"Searching the literature on {topic}, Boss. One moment.")
         threading.Thread(
             target=self._search_thread, args=(topic, recent, page),
             daemon=True, name="atlas-research").start()
-        return None
+        return f"Searching the literature on {topic}, Boss. One moment."
 
     def _search_thread(self, topic: str, recent: bool, page: int) -> None:
         try:
@@ -274,7 +274,6 @@ class ATLASResearch:
             "fields": "title,authors,year,abstract,citationCount,externalIds,venue",
         })
         url = f"{self._S2_BASE}?{params}"
-        import json
         raw = self._fetch(url)
         if not raw:
             return []
@@ -311,7 +310,6 @@ class ATLASResearch:
     # ── CrossRef ──────────────────────────────────────────────────────────────
 
     def _search_crossref(self, topic: str, page: int = 1) -> List[Paper]:
-        import json
         offset = (page - 1) * 5
         params = urllib.parse.urlencode({
             "query": topic,
@@ -468,11 +466,11 @@ class ATLASResearch:
             fname = f"{date.today()}-{slug}.md"
             citations_md = "\n".join(f"- {p.apa()}" for p in papers)
             papers_md = "\n\n".join(
-                f"### {p.title}\n"
-                f"**Authors:** {', '.join(p.authors[:3])}{' et al.' if len(p.authors) > 3 else ''}  \n"
-                f"**Year:** {p.year or 'N/A'}  |  **Citations:** {p.citations}  "
-                f"|  **Source:** {p.source}  \n"
-                f"{p.abstract[:500]}" if p.abstract else ""
+                (f"### {p.title}\n"
+                 f"**Authors:** {', '.join(p.authors[:3])}{' et al.' if len(p.authors) > 3 else ''}  \n"
+                 f"**Year:** {p.year or 'N/A'}  |  **Citations:** {p.citations}  "
+                 f"|  **Source:** {p.source}  \n"
+                 f"{p.abstract[:500] if p.abstract else 'Abstract not available.'}")
                 for p in papers[:10]
             )
             (folder / fname).write_text(

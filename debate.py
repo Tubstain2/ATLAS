@@ -156,11 +156,10 @@ class ATLASDebate:
 
     def _start_debate(self, topic: str, dtype: str) -> str:
         self._last_topic = topic
-        self._speak(f"Starting debate on {topic}, Boss. One moment while I gather both perspectives.")
         threading.Thread(
             target=self._run_debate_thread, args=(topic, dtype),
             daemon=True, name="atlas-debate").start()
-        return None   # speak already called; returning None prevents double-speak
+        return f"Starting debate on {topic}, Boss. One moment while I gather both perspectives."
 
     def _run_debate_thread(self, topic: str, dtype: str) -> None:
         try:
@@ -178,7 +177,7 @@ class ATLASDebate:
         for_prompt   = _FOR_PROMPT.format(topic=topic)
         against_prompt = _AGAINST_PROMPT.format(topic=topic)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Run both agents in parallel via thread executors (brain is sync)
         for_fut     = loop.run_in_executor(None, self._call_agent, for_prompt)
         against_fut = loop.run_in_executor(None, self._call_agent, against_prompt)

@@ -253,6 +253,8 @@ class ChromeControl:
                     "--no-first-run",
                     "--no-default-browser-check",
                     "--disable-sync",
+                    "--homepage=about:blank",
+                    "about:blank",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

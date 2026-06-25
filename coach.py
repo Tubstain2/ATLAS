@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -163,10 +164,14 @@ class ATLASCoach:
                                            "coaching progress", "show coaching")):
             return self._progress_card()
 
-        # ── Pause goal ────────────────────────────────────────────────────────
+        # ── Pause / resume goal ───────────────────────────────────────────────
         m = re.search(r"pause coaching on (.+?)$", lower_clean)
         if m:
             return self._pause_goal(m.group(1).strip())
+
+        m = re.search(r"resume coaching on (.+?)$", lower_clean)
+        if m:
+            return self._resume_goal(m.group(1).strip())
 
         # ── Complete and archive ───────────────────────────────────────────────
         m = re.search(r"i am done with (.+?)$", lower_clean)
@@ -204,7 +209,6 @@ class ATLASCoach:
 
         # All 5 answers collected — generate plan
         self._onboarding_state = None
-        import threading
         t = threading.Thread(
             target=self._generate_plan_async,
             args=(state["topic"], state["answers"]),
@@ -426,7 +430,16 @@ class ATLASCoach:
         if not goal:
             return f"No active goal matching '{topic}', Boss."
         goal.paused = True
-        return f"Coaching on {goal.topic} paused, Boss. Say 'ATLAS check in on {goal.topic}' to resume."
+        return f"Coaching on {goal.topic} paused, Boss. Say 'ATLAS resume coaching on {goal.topic}' to continue."
+
+    def _resume_goal(self, topic: str) -> str:
+        goal = self._find_goal(topic)
+        if not goal:
+            return f"No coaching goal matching '{topic}', Boss."
+        if not goal.paused:
+            return f"Coaching on {goal.topic} is already active, Boss."
+        goal.paused = False
+        return f"Coaching on {goal.topic} resumed, Boss. Say 'ATLAS check in on {goal.topic}' to log today's progress."
 
     def _archive_goal(self, topic: str) -> str:
         goal = self._find_goal(topic)
@@ -440,7 +453,6 @@ class ATLASCoach:
         goal = self._find_goal(topic)
         if not goal:
             return f"No active goal matching '{topic}', Boss."
-        import threading
         threading.Thread(target=self._regen_plan_async, args=(goal,),
                          daemon=True).start()
         return f"Analysing your progress and adjusting the plan for {goal.topic}, Boss."
@@ -492,17 +504,21 @@ class ATLASCoach:
                 goal_file = subfolder / "goal.md"
                 if goal_file.exists():
                     topic = subfolder.name.replace("-", " ")
+                    start_date = date.today().isoformat()
                     try:
                         content = goal_file.read_text(encoding="utf-8")
                         m = re.search(r"# Goal: (.+)", content)
                         if m:
                             topic = m.group(1).strip()
+                        m2 = re.search(r"^date:\s*(.+)", content, re.MULTILINE)
+                        if m2:
+                            start_date = m2.group(1).strip()
                     except Exception:
                         pass
                     self._goals.append(CoachingGoal(
                         name=subfolder.name,
                         topic=topic,
-                        start_date=date.today().isoformat(),
+                        start_date=start_date,
                         vault_folder=f"Coaching/{subfolder.name}",
                     ))
         except Exception as exc:
