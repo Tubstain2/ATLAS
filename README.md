@@ -1,64 +1,97 @@
-# ATLAS — AI Assistant
+# ATLAS — AI Desktop Assistant
 
-> Voice-activated AI assistant with a real-time animated desktop interface.
-> Powered by Gemini (reasoning) · Groq (fast voice) · Whisper (STT) · Piper (TTS).
+> Voice-controlled AI desktop assistant for macOS. Always-on, always listening, fully local-first.
+> Powered by Whisper (STT) · Piper (TTS) · MLX / Groq / OpenRouter (AI) · PyQt6 (UI).
 
 ---
 
-## Quick Start
+## Features
 
-### macOS
+### Core
+- **Wake word** — say "ATLAS" to activate (offline, no API key required)
+- **Speech-to-text** — local Whisper transcription, auto-selects model by chip (M1/M2/M3/Intel)
+- **Text-to-speech** — Piper TTS running locally, JARVIS-style voice
+- **AI routing** — local MLX for fast replies, Groq Llama 3 70B for cloud fallback, OpenRouter for reasoning and vision
+- **Offline mode** — automatically switches to a local Ollama model when internet is unavailable
+- **VAD** — WebRTC VAD for instant speech-end detection (<50 ms latency)
+
+### UI
+- **Orb** — animated 60fps particle orb that reacts to listening / thinking / speaking states
+- **Smart Card** — floating glassmorphism overlay that auto-detects and renders product info, stocks, weather, news, recipes, debate results, and research papers
+- **Feed panel** — live dashboard with stocks, crypto, weather, news, tasks, and Obsidian notes
+- **Cursor overlay** — minimal always-on-top status indicator
+
+### Capability Modules
+
+| Module | Voice commands (examples) |
+|--------|--------------------------|
+| **Obsidian** | `ATLAS take a note` · `ATLAS add a task` · `ATLAS open obsidian graph` |
+| **Research** | `ATLAS research X` · `ATLAS find papers on X` · `ATLAS cite that paper` |
+| **Debate** | `ATLAS debate whether I should X` · `ATLAS debate X vs Y` · `ATLAS steelman the for side` |
+| **Tutor** | `ATLAS teach me X` · `ATLAS give me a hint` · `ATLAS harder please` |
+| **Coach** | `ATLAS coach me on X` · `ATLAS check in on X` · `ATLAS how am I doing with X` |
+| **Recorder** | `ATLAS record my screen` · `ATLAS new chapter intro` · `ATLAS stop recording` |
+| **Markets** | `ATLAS what is AAPL stock` · `ATLAS crypto update` · `ATLAS market summary` |
+| **Chrome** | `ATLAS open youtube.com` · `ATLAS search Google for X` · `ATLAS click login` |
+| **Vision** | `ATLAS what do you see` · `ATLAS describe my screen` |
+| **Spotify** | `ATLAS play X` · `ATLAS skip` · `ATLAS what song is this` |
+| **Images** | `ATLAS generate image of X` |
+| **Tasks** | `ATLAS run X` (multi-step agentic planner) |
+
+---
+
+## Installation
+
+### Prerequisites (macOS)
 
 ```bash
-# 1. Clone / download the project
-cd ~/Desktop/atlas
+brew install ffmpeg tesseract portaudio
+```
 
-# 2. Create a virtual environment
+### Setup
+
+```bash
+git clone https://github.com/Tubstain2/ATLAS.git
+cd ATLAS
 python3 -m venv .venv
 source .venv/bin/activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
-
-# 4. Set API keys (add to ~/.zshrc for persistence)
-export GEMINI_API_KEY="your-gemini-key"
-export GROQ_API_KEY="your-groq-key"
-
-# 5. Launch
-python main.py
+playwright install chromium
 ```
 
-### Windows
+### API Keys
 
-```powershell
-# 1. Open PowerShell in the project folder
-cd C:\Users\YourName\Desktop\atlas
+All keys are optional — ATLAS works fully offline without them.
 
-# 2. Create a virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Set API keys (System → Environment Variables, or in this session)
-$env:GEMINI_API_KEY = "your-gemini-key"
-$env:GROQ_API_KEY   = "your-groq-key"
-
-# 5. Launch
-python main.py
+```bash
+export GROQ_API_KEY="..."           # Groq Llama 3 70B (fast cloud responses)
+export OPENROUTER_API_KEY="..."     # GPT-class models, vision, free models
+export GEMINI_API_KEY="..."         # Gemini 2.0 Flash
+export FINNHUB_API_KEY="..."        # Live stock prices and news
 ```
 
----
+Add to `~/.zshrc` to persist across sessions.
 
-## UI Controls
+### Configure
 
-| Key / Action | Effect |
-|---|---|
-| `Esc` | Minimise to system tray |
-| `F11` | Toggle full-screen |
-| Tray double-click | Show / hide window |
-| Tray menu → Mute | Toggle microphone |
+Edit `config.yaml` to set your Obsidian vault path and preferences:
+
+```yaml
+obsidian:
+  vault_path: "/path/to/your/obsidian/vault"
+
+voice:
+  wake_word: "atlas"
+  whisper_model: "auto"    # auto-selects based on chip
+
+smart_card_auto_dismiss: false    # cards stay open until closed manually
+```
+
+### Run
+
+```bash
+python3 main.py
+```
 
 ---
 
@@ -66,54 +99,82 @@ python main.py
 
 ```
 atlas/
-├── main.py           Entry point + demo loop
-├── config.yaml       All user-tunable settings
-├── core.py           Agent loop: Groq ↔ Gemini routing      [Step 3]
-├── voice.py          Wake word + STT + TTS + amplitude feed  [Step 2]
-├── web.py            DuckDuckGo + BeautifulSoup scraper      [Step 4]
-├── control.py        Mouse / keyboard / OCR / shell          [Step 5]
-├── self_editor.py    Self-modifying code engine              [Step 6]
+├── main.py                 Entry point + module wiring
+├── config.yaml             All user settings
+├── core.py                 Agent loop + system prompt
+├── voice.py                Wake word → STT → TTS pipeline
+├── brain.py                AI router (MLX / Groq / OpenRouter)
+├── web.py                  DuckDuckGo search + page scraper
+├── control.py              Mouse / keyboard / OCR / shell
+├── obsidian.py             Obsidian vault read/write + graph view
+├── smart_card.py           Auto-detecting floating card widget
+├── market.py               Stocks, crypto, Finnhub news
+├── chrome_control.py       Playwright CDP browser control
+├── recorder.py             Screen recorder + AI commentary
+├── coach.py                30-day coaching goals + check-ins
+├── debate.py               Parallel FOR/AGAINST debate engine
+├── tutor.py                Socratic tutoring sessions
+├── research.py             Academic paper search (arXiv / S2 / CrossRef)
+├── vision.py               Screenshot + webcam analysis
+├── memory.py               Episodic + working memory (encrypted)
+├── planner.py              Multi-step agentic task planner
+├── code_agent.py           Sandboxed code execution agent
+├── pipeline.py             Interruption-aware TTS pipeline
+├── scheduler.py            Cron jobs (briefing, check-ins, review)
+├── soul.py                 Personality layer from SOUL.md in vault
+├── playbook.py             Pattern memory — learns from interactions
+├── offline.py              Connectivity monitor + local model fallback
+├── context7.py             Live library docs injection for coding queries
+├── shazam.py               Song identification
+├── spotify.py              Spotify playback control
+├── imagegen.py             Local Stable Diffusion image generation
 └── ui/
-    ├── main_window.py    Top-level QMainWindow
-    ├── orb_widget.py     Animated orb (QPainter, 60 fps)
-    ├── hud_widget.py     Transparent HUD overlay
-    └── transcript_widget.py  Live transcript + response reveal
+    ├── main_window.py      Top-level QMainWindow
+    └── smart_card.html     Smart card renderer (D3 / CSS glassmorphism)
 ```
 
 ---
 
-## Configuration (`config.yaml`)
+## Obsidian Vault Structure
 
-| Key | Default | Description |
-|---|---|---|
-| `app.window.width` | 1280 | Initial window width |
-| `app.window.fullscreen` | false | Start full-screen |
-| `ui.orb_radius` | 170 | Orb radius in pixels |
-| `voice.wake_word` | atlas | Wake-word trigger |
-| `voice.whisper_model` | base | Whisper model size |
-| `safety.confirm_destructive_commands` | true | Require typed confirmation |
+ATLAS writes to your vault under an `ATLAS/` folder — nothing outside it is touched.
 
----
-
-## API Keys
-
-All keys are loaded from environment variables — **never hardcoded**.
-
-| Variable | Used for |
-|---|---|
-| `GEMINI_API_KEY` | Gemini 2.0 Flash — reasoning & research |
-| `GROQ_API_KEY` | Llama 3 70B on Groq — fast voice responses |
+```
+ATLAS/
+├── Daily/          ← daily notes + morning briefings
+├── Notes/          ← voice notes
+├── Inbox/          ← quick captures
+├── Tasks/          ← task list
+├── Coaching/       ← goal plans + daily progress logs
+│   └── Learning/   ← tutoring session notes
+├── Research/
+│   ├── Academic/   ← paper search results
+│   └── Debates/    ← debate transcripts
+├── Recordings/     ← screen recording summaries
+├── Memory/         ← episodic memory
+└── Playbook/       ← pattern memory
+```
 
 ---
 
-## Build Status
+## macOS Permissions
 
-| Module | Status |
-|---|---|
-| UI Shell | ✅ Complete |
-| Voice (wake word + STT + TTS) | 🔲 Step 2 |
-| Core agent loop | 🔲 Step 3 |
-| Web module | 🔲 Step 4 |
-| Laptop control | 🔲 Step 5 |
-| Self-modifying engine | 🔲 Step 6 |
-| PyInstaller packaging | 🔲 Step 7 |
+ATLAS will request these on first use:
+
+| Permission | Used for |
+|-----------|----------|
+| Microphone | Wake word detection + Whisper STT |
+| Accessibility | Keyboard/mouse control, Chrome AppleScript (graph view) |
+| Screen Recording | Vision module + screen recorder |
+| Automation | Controlling Obsidian and Chrome via AppleScript |
+
+---
+
+## UI Controls
+
+| Action | Effect |
+|--------|--------|
+| `Esc` | Minimise to system tray |
+| `F11` | Toggle full-screen |
+| Tray double-click | Show / hide window |
+| Tray → Mute | Toggle microphone |
