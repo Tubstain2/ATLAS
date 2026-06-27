@@ -1859,5 +1859,107 @@ window.hologramShowChat = function(){
 
 console.log('[ATLAS] Hologram module loaded — Three.js r163');
 </script>
+
+<!-- ── Command Centre ─────────────────────────────────────────────────────── -->
+<style>
+#command-centre-panel {
+  position: fixed;
+  top: 60px; right: 10px;
+  width: 320px; max-height: 80vh;
+  overflow-y: auto;
+  background: rgba(4,10,28,0.95);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 8px;
+  padding: 16px;
+  display: none;
+  z-index: 500;
+  font-family: monospace;
+  font-size: 11px;
+  color: rgba(0,200,255,0.85);
+}
+#command-centre-panel h3 {
+  margin: 0 0 10px; font-size: 12px; letter-spacing: 2px;
+  color: rgba(0,220,255,1); text-transform: uppercase;
+}
+#command-centre-panel .cc-section {
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(0,200,255,0.1);
+  padding-bottom: 8px;
+}
+#command-centre-panel .cc-label {
+  color: rgba(0,200,255,0.5); font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+#command-centre-panel .cc-row {
+  display: flex; justify-content: space-between;
+  margin: 2px 0; color: rgba(200,240,255,0.8);
+}
+#command-centre-panel .cc-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; margin-right: 6px;
+  background: rgba(0,200,100,0.8);
+}
+#command-centre-panel .cc-dot.idle { background: rgba(100,100,100,0.5); }
+</style>
+
+<div id="command-centre-panel">
+  <h3>⬡ ATLAS Command Centre</h3>
+  <div class="cc-section">
+    <div class="cc-label">Agent Status</div>
+    <div id="cc-agents">—</div>
+  </div>
+  <div class="cc-section">
+    <div class="cc-label">Task Queue</div>
+    <div id="cc-queue">—</div>
+  </div>
+  <div class="cc-section">
+    <div class="cc-label">System Resources</div>
+    <div id="cc-resources">—</div>
+  </div>
+  <div class="cc-section" style="border-bottom:none">
+    <div class="cc-label">Recent Actions</div>
+    <div id="cc-actions">—</div>
+  </div>
+</div>
+
+<script>
+window.showCommandCentre = function() {
+  document.getElementById('command-centre-panel').style.display = 'block';
+};
+window.hideCommandCentre = function() {
+  document.getElementById('command-centre-panel').style.display = 'none';
+};
+window.commandCentreUpdate = function(data) {
+  try {
+    const d = typeof data === 'string' ? JSON.parse(data) : data;
+    // Agents
+    const ag = d.agents || {};
+    document.getElementById('cc-agents').innerHTML =
+      ag.running > 0
+        ? ag.tasks.map(t => `<div><span class="cc-dot"></span>${t}</div>`).join('')
+        : '<div><span class="cc-dot idle"></span>Idle</div>';
+    // Queue
+    const q = d.queue || [];
+    document.getElementById('cc-queue').innerHTML = q.length
+      ? q.map(t => `<div class="cc-row"><span>${(t.description||'').slice(0,28)}</span><span>P${t.priority||3}</span></div>`).join('')
+      : '<div>Empty</div>';
+    // Resources
+    const r = d.resources || {};
+    document.getElementById('cc-resources').innerHTML =
+      `<div class="cc-row"><span>Mode</span><span>${r.mode||'—'}</span></div>` +
+      `<div class="cc-row"><span>CPU</span><span>${(r.cpu_pct||0).toFixed(0)}%</span></div>` +
+      `<div class="cc-row"><span>RAM free</span><span>${(r.ram_available_gb||0).toFixed(1)} GB</span></div>` +
+      `<div class="cc-row"><span>Battery</span><span>${r.battery_pct||'—'}%${r.plugged?' ⚡':''}</span></div>`;
+    // Recent actions
+    const acts = d.recent_actions || [];
+    document.getElementById('cc-actions').innerHTML = acts.length
+      ? acts.map(a => `<div style="margin:2px 0;opacity:0.7">${a.slice(0,60)}</div>`).join('')
+      : '<div>None yet</div>';
+  } catch(e) {
+    console.warn('[ATLAS] commandCentreUpdate parse error:', e);
+  }
+};
+console.log('[ATLAS] Command Centre module loaded.');
+</script>
 </body>
 </html>

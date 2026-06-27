@@ -290,3 +290,21 @@ hologram_fps_target: 60              # target FPS (informational; Three.js uses 
 hologram_auto_dismiss_seconds: 0     # seconds before hologram auto-closes (0 = never)
 hologram_default_state: "orb"        # initial layout: orb | active | fullscreen
 
+# ── Agentic OS ────────────────────────────────────────────────────────────────
+agentic_os_enabled: true
+agent_loop_interval_ms: 500
+max_parallel_agents: 4
+task_queue_enabled: true
+task_timeout_minutes: 5
+decision_ask_threshold: 0.6
+decision_act_report_threshold: 0.85
+proactive_min_interval_minutes: 15
+proactive_max_per_hour: 3
+resource_mode: auto
+battery_balanced_threshold: 30
+battery_powersave_threshold: 10
+safety_layer_enabled: true
+audit_log_enabled: true
+events_enabled: true
+battery_low_threshold: 20
+

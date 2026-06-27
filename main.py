@@ -1087,6 +1087,70 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
         brain._handle_meta = _meta_with_hologram
         window._hologram = hologram
 
+    # ── Agentic OS Layer ──────────────────────────────────────────────────────
+    if config.get("agentic_os_enabled", True):
+        from safety      import SafetyLayer
+        from decisions   import ConfidenceEngine
+        from task_queue  import TaskQueue
+        from events      import EventMonitor
+        from resources   import ResourceManager
+        from orchestrator import Orchestrator
+        from proactive   import ProactiveIntelligence
+        from agent_loop  import AgentLoop
+        from command     import CommandCentre
+
+        atlas_root    = str(Path(__file__).parent)
+        safety_layer  = SafetyLayer(config, atlas_root=atlas_root)
+        decisions_eng = ConfidenceEngine(config, safety_layer)
+        decisions_eng.load_precedents(atlas_root)
+        task_q        = TaskQueue(config, atlas_root=atlas_root)
+        resources_mgr = ResourceManager(config, speak_cb=vm.speak)
+        orchestrator  = Orchestrator(
+            config, speak_cb=vm.speak, brain=brain,
+            task_queue=task_q, safety=safety_layer, decisions=decisions_eng,
+            resources=resources_mgr,
+            research=getattr(window, "_research", None),
+            market=market,
+            code_agent=getattr(brain, "_code_agent", None),
+        )
+        event_monitor = EventMonitor(config, speak_cb=vm.speak, brain=brain,
+                                     task_queue=task_q, safety=safety_layer)
+        proactive_mod = ProactiveIntelligence(config, speak_cb=vm.speak, brain=brain,
+                                              task_queue=task_q)
+        agent_lp      = AgentLoop(
+            config, speak_cb=vm.speak,
+            task_queue=task_q, orchestrator=orchestrator,
+            events=event_monitor, resources=resources_mgr,
+            proactive=proactive_mod, safety=safety_layer, decisions=decisions_eng,
+        )
+        cmd_centre    = CommandCentre(
+            config, speak_cb=vm.speak,
+            task_queue=task_q, orchestrator=orchestrator,
+            resources=resources_mgr, safety=safety_layer,
+            agent_loop=agent_lp, window=window,
+        )
+
+        resources_mgr.start()
+        orchestrator.start()
+        event_monitor.start()
+        proactive_mod.start()
+        agent_lp.start()
+
+        _orig_meta_aos = brain._handle_meta
+
+        def _meta_with_aos(text: str):
+            for handler in (safety_layer, agent_lp, task_q, cmd_centre, proactive_mod):
+                resp = handler.handle(text)
+                if resp is not None:
+                    return resp
+            return _orig_meta_aos(text)
+
+        brain._handle_meta  = _meta_with_aos
+        window._agent_loop  = agent_lp
+        window._cmd_centre  = cmd_centre
+        window._task_queue  = task_q
+        log.info("Agentic OS: all layers active.")
+
     # Keep references so they aren't GC'd
     window._core           = core
     window._web_module     = web

@@ -1,0 +1,18 @@
+triggers:
+  new_download:
+    enabled: true
+    action: notify_and_offer_organise
+  battery_low:
+    threshold: 20
+    action: notify_and_save
+  stock_move:
+    threshold_percent: 3
+    action: notify_with_briefing_offer
+  urgent_email:
+    keywords: [urgent, asap, important, deadline]
+    action: notify_immediately
+  meeting_reminder:
+    minutes_before: 15
+    action: notify_with_briefing
+  cpu_throttle_threshold: 85
+  ram_throttle_threshold_gb: 4
