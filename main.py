@@ -105,6 +105,7 @@ from coach import ATLASCoach
 from debate import ATLASDebate
 from tutor import ATLASTutor
 from research import ATLASResearch
+from hologram import ATLASHologram
 
 import yaml
 
@@ -1058,6 +1059,33 @@ def _start_voice(config: dict, window: ATLASMainWindow) -> None:
 
     brain._handle_meta = _meta_with_research
     window._research = research
+
+    # ── 3D Hologram System ────────────────────────────────────────────────────
+    hologram = None
+    if config.get("hologram_enabled", True):
+        hologram = ATLASHologram(
+            config,
+            speak_cb=vm.speak,
+            brain=brain,
+            vault_brain=vault_brain,
+            window=window,
+            market_mod=market,
+        )
+
+        # Wire amplitude → hologram in real-time
+        window.amplitude_changed.connect(hologram.push_amplitude)
+        window.state_changed.connect(hologram.push_state)
+
+        _orig_meta_hologram = brain._handle_meta
+
+        def _meta_with_hologram(text: str):
+            resp = hologram.handle(text)
+            if resp is not None:
+                return resp
+            return _orig_meta_hologram(text)
+
+        brain._handle_meta = _meta_with_hologram
+        window._hologram = hologram
 
     # Keep references so they aren't GC'd
     window._core           = core

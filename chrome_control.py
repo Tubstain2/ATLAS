@@ -142,7 +142,10 @@ class ChromeControl:
                 self._relaunch_chrome()
                 connected = self._try_cdp() or self._try_fresh_browser()
             else:
-                connected = self._try_persistent_context() or self._try_fresh_browser()
+                # Silent mode: CDP failed and auto_relaunch is off — don't open anything
+                log.info("ChromeControl: Chrome not running and auto_relaunch is off — "
+                         "standing by. Say 'ATLAS open Chrome' to launch it.")
+                connected = False
             ready_q.put(connected)
             if not connected:
                 return

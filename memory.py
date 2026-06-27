@@ -101,12 +101,19 @@ class MemoryModule:
             self._working_msgs.append({"role": role, "content": content, "ts": _ts()})
             if len(self._working_msgs) > self._max_working:
                 self._working_msgs = self._working_msgs[-self._max_working:]
+            msg_count = len(self._working_msgs)
         # Append line to vault working note (non-blocking, best-effort)
         if self._vb:
             threading.Thread(
                 target=self._flush_working_line,
                 args=(role, content),
                 daemon=True, name="atlas-working-flush",
+            ).start()
+        # Auto-save episode every 10 messages so force-kills don't lose the session
+        if role == "assistant" and msg_count > 0 and msg_count % 10 == 0:
+            threading.Thread(
+                target=self.save_session_episode,
+                daemon=True, name="atlas-auto-episode",
             ).start()
 
     def _flush_working_line(self, role: str, content: str) -> None:
@@ -384,6 +391,14 @@ class MemoryModule:
 
     def generate_greeting(self) -> str:
         ctx = self.get_startup_context()
+
+        # Fallback: if vault has no recent episode (e.g. last session was force-killed),
+        # read from the brain's conversations/ JSON files instead.
+        if not ctx["last_date"] or self._startup_context_is_stale(ctx):
+            fallback = self._read_last_conversation_file()
+            if fallback:
+                ctx = fallback
+
         if not ctx["last_date"]:
             return f"Good to see you, {self._user_name}. I'm fully online and ready."
         try:
@@ -406,6 +421,52 @@ class MemoryModule:
 
         return (f"Welcome back, {self._user_name}. "
                 f"Last session was {time_str}{proj_str}. Ready when you are.")
+
+    def _startup_context_is_stale(self, ctx: dict) -> bool:
+        """Return True if the vault's last episode is older than 1 day."""
+        if not ctx.get("last_date"):
+            return True
+        try:
+            last_dt  = datetime.fromisoformat(ctx["last_date"])
+            days_ago = (date.today() - last_dt.date()).days
+            return days_ago > 1
+        except Exception:
+            return True
+
+    def _read_last_conversation_file(self) -> Optional[dict]:
+        """
+        Read the most recent conversations/YYYY-MM-DD.json saved by brain.py.
+        Returns a startup-context-compatible dict, or None.
+        """
+        import os as _os
+        root = Path(_os.environ.get("ATLAS_ROOT", "."))
+        conv_dir = root / "conversations"
+        if not conv_dir.exists():
+            return None
+        json_files = sorted(conv_dir.glob("*.json"), reverse=True)
+        for f in json_files[:3]:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                msgs = data.get("messages", [])
+                if not msgs:
+                    continue
+                # Build a rough summary from the last few assistant turns
+                assistant_msgs = [m["content"] for m in msgs if m.get("role") == "assistant"]
+                summary = assistant_msgs[-1][:120] if assistant_msgs else ""
+                # Extract project names (capitalized words from user turns)
+                user_text = " ".join(m["content"] for m in msgs if m.get("role") == "user")
+                projects  = list({w for w in user_text.split()
+                                   if w.istitle() and len(w) > 3})[:3]
+                return {
+                    "last_date":     data.get("date", f.stem),
+                    "last_summary":  summary,
+                    "last_projects": projects,
+                    "top_facts":     [],
+                    "session_count": 0,
+                }
+            except Exception:
+                continue
+        return None
 
     # ── Prompt context for AI calls ────────────────────────────────────────────
 

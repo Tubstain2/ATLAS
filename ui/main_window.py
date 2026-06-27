@@ -185,7 +185,7 @@ class ATLASMainWindow(QMainWindow):
         # Settings
         s = self._view.settings()
         s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled,             True)
-        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
+        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         s.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,          True)
 
         # Background
@@ -451,6 +451,15 @@ class ATLASMainWindow(QMainWindow):
 
     def show_toast(self, message: str, kind: str = "info") -> None:
         self._js(f"showToast({self._q(message)}, {self._q(kind)})")
+
+    # ── Hologram public API ───────────────────────────────────────────────────
+
+    def show_hologram(self, viz_type: str, data: dict | None = None) -> None:
+        payload = json.dumps(data or {})
+        self._js(f"showHologram({self._q(viz_type)}, {payload})")
+
+    def hide_hologram(self) -> None:
+        self._js("hideHologram()")
 
 
 # ── feed_panel shim ────────────────────────────────────────────────────────────

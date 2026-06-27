@@ -69,7 +69,7 @@ brain:
   max_tokens: 1024           # max tokens for Claude voice responses
 
 dashboard:
-  visible_on_startup: true   # show dashboard when ATLAS launches
+  visible_on_startup: false  # don't pop up dashboard on launch
   briefing_time: "08:00"     # daily briefing trigger time (HH:MM)
 
 location_lat: 51.5           # set your latitude  (used by Weather widget)
@@ -108,7 +108,7 @@ obsidian:
 chrome:
   chrome_control_enabled: true
   chrome_debug_port: 9222
-  chrome_auto_relaunch: true
+  chrome_auto_relaunch: false    # don't launch Chrome on startup; connect to existing only
   form_safety_enabled: true
   require_confirmation_before_submit: true
 
@@ -279,4 +279,14 @@ tutor_save_notes: true                # auto-save session notes to Obsidian vaul
 research_enabled: true
 research_max_results: 10              # max papers returned per search (across all sources)
 research_auto_save_obsidian: false    # auto-save all research to vault (manual save = false)
+
+# ── 3D Hologram System ────────────────────────────────────────────────────────
+hologram_enabled: true
+hologram_color: "#4FC3F7"             # default hologram tint (cyan)
+hologram_bloom_strength: 0.85        # UnrealBloomPass strength (0.0–3.0)
+hologram_scanline_speed: 2.8         # scanline scroll speed in GLSL (higher = faster)
+hologram_brightness: 1.3             # renderer tone mapping exposure
+hologram_fps_target: 60              # target FPS (informational; Three.js uses rAF)
+hologram_auto_dismiss_seconds: 0     # seconds before hologram auto-closes (0 = never)
+hologram_default_state: "orb"        # initial layout: orb | active | fullscreen
 

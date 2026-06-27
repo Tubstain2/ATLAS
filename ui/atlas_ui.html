@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ATLAS</title>
+<!-- Three.js import map — loaded only when hologram activates -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/"
+  }
+}
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -361,6 +370,138 @@ body::before {
 /* scrollbar global */
 ::-webkit-scrollbar { width: 3px; height: 3px; }
 ::-webkit-scrollbar-thumb { background: rgba(0,180,220,0.15); border-radius: 2px; }
+
+/* ── Hologram layout states ────────────────────────────────────────────── */
+
+/* Make orb independently positionable so it can slide to corner */
+#orb-wrap {
+  position: fixed !important;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -54%) scale(1);
+  transition: top 400ms cubic-bezier(0.34,1.56,0.64,1),
+              left 400ms cubic-bezier(0.34,1.56,0.64,1),
+              transform 400ms cubic-bezier(0.34,1.56,0.64,1);
+  z-index: 5;
+  margin-top: 0 !important;
+}
+
+/* State 2: hologram active — orb mini top-left */
+body.hologram-active #orb-wrap {
+  top: 56px; left: 16px;
+  transform: translate(0,0) scale(0.44);
+}
+
+/* State 3: hologram fullscreen — orb dot */
+body.hologram-fullscreen #orb-wrap {
+  top: 56px; left: 16px;
+  transform: translate(0,0) scale(0.13);
+}
+
+body.hologram-fullscreen #sidebar { display: none !important; }
+body.hologram-fullscreen #main    { display: none !important; }
+
+/* Hologram container */
+#hologram-container {
+  position: fixed;
+  top: 46px; left: 0; right: 0; bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 400ms ease;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  background: #000000;
+}
+body.hologram-active #hologram-container,
+body.hologram-fullscreen #hologram-container {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* Hologram state 2: compress transcript to bottom strip */
+body.hologram-active #transcript-wrap {
+  max-height: 30vh;
+  overflow: hidden;
+}
+
+#hologram-header {
+  position: absolute;
+  top: 10px; right: 14px;
+  display: flex; align-items: center; gap: 12px;
+  z-index: 20;
+}
+#hologram-status {
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.3em;
+  color: rgba(79,195,247,0.5);
+  text-transform: uppercase;
+  animation: holo-blink 3s ease-in-out infinite;
+}
+@keyframes holo-blink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+#hologram-label {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.2em;
+  color: rgba(79,195,247,0.7);
+  text-transform: uppercase;
+}
+#hologram-close-btn {
+  background: rgba(79,195,247,0.07);
+  border: 1px solid rgba(79,195,247,0.25);
+  border-radius: 5px;
+  color: rgba(79,195,247,0.65);
+  cursor: pointer; padding: 4px 12px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.1em;
+  transition: all 0.2s;
+}
+#hologram-close-btn:hover {
+  background: rgba(79,195,247,0.14);
+  color: #4FC3F7;
+  border-color: rgba(79,195,247,0.5);
+}
+
+/* Three.js canvas fills the container */
+#hologram-canvas-wrap {
+  flex: 1; width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+#hologram-canvas-wrap canvas {
+  display: block; width: 100% !important; height: 100% !important;
+}
+
+/* Scanline overlay on top of canvas */
+#hologram-canvas-wrap::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Corner mini-orb label */
+#orb-mini-label {
+  position: fixed;
+  top: 174px; left: 10px;
+  font-family: var(--font-mono);
+  font-size: 8px; letter-spacing: 0.25em;
+  color: rgba(79,195,247,0.5);
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 300ms ease 200ms;
+  z-index: 6; pointer-events: none;
+}
+body.hologram-active #orb-mini-label { opacity: 1; }
+body.hologram-fullscreen #orb-mini-label { opacity: 0; }
 </style>
 </head>
 <body>
@@ -410,6 +551,19 @@ body::before {
     <div id="date-str">–</div>
     <div id="state-label">[ READY ]</div>
   </div>
+</div>
+
+<!-- ── Mini-orb label (visible only in hologram states) ──────────────────── -->
+<div id="orb-mini-label">ATLAS</div>
+
+<!-- ── 3D Hologram container ──────────────────────────────────────────────── -->
+<div id="hologram-container">
+  <div id="hologram-header">
+    <span id="hologram-status">● HOLOGRAM ACTIVE</span>
+    <span id="hologram-label"></span>
+    <button id="hologram-close-btn" onclick="hideHologram()">[ CLOSE ]</button>
+  </div>
+  <div id="hologram-canvas-wrap"></div>
 </div>
 
 <!-- ── Transcript + input (bottom) ───────────────────────────────────────── -->
@@ -954,6 +1108,756 @@ function updateReminders(arr) {
     list.appendChild(el);
   });
 }
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     ATLAS 3D HOLOGRAPHIC SYSTEM — Three.js r163 (loaded from CDN)
+     All functions exposed to window.* so Python's runJavaScript() can call them.
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+
+/* ── GLSL Holographic Shader ─────────────────────────────────────────────── */
+const HOLO_VS = `
+uniform float time;
+uniform float amplitude;
+varying vec2  vUv;
+varying vec3  vNormal;
+varying vec3  vPosition;
+varying vec3  vViewPos;
+void main(){
+  vUv      = uv;
+  vNormal  = normalize(normalMatrix * normal);
+  vPosition= position;
+  float glitch = sin(time*4.0 + position.y*18.0) * 0.004 * (0.4 + amplitude*0.6);
+  vec3 p   = position;
+  p.x     += glitch;
+  vec4 mv  = modelViewMatrix * vec4(p,1.0);
+  vViewPos = -mv.xyz;
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const HOLO_FS = `
+uniform float time;
+uniform vec3  color;
+uniform float opacity;
+uniform float amplitude;
+varying vec2  vUv;
+varying vec3  vNormal;
+varying vec3  vPosition;
+varying vec3  vViewPos;
+void main(){
+  float scanline = sin(vPosition.y*55.0 - time*2.8)*0.5+0.5;
+  float scanFac  = mix(0.82,1.0,scanline*0.22);
+  vec3 norm      = normalize(vNormal);
+  vec3 view      = normalize(vViewPos);
+  float fresnel  = pow(1.0-abs(dot(norm,view)),2.2);
+  float flicker  = 1.0 - sin(time*17.3)*0.015;
+  float noise    = fract(sin(dot(vUv,vec2(12.9898,78.233))+time*0.07)*43758.5453)*0.035;
+  vec3  col      = color*(1.0+fresnel*0.55+amplitude*0.25)+noise;
+  float alpha    = opacity*scanFac*flicker;
+  gl_FragColor   = vec4(col,alpha);
+}`;
+
+function makeHoloMat(hex=0x4FC3F7, op=0.72){
+  return new THREE.ShaderMaterial({
+    uniforms:{
+      time:{value:0}, color:{value:new THREE.Color(hex)},
+      opacity:{value:op}, amplitude:{value:0}
+    },
+    vertexShader:HOLO_VS, fragmentShader:HOLO_FS,
+    transparent:true, side:THREE.DoubleSide, depthWrite:false
+  });
+}
+
+/* ── Scene state ─────────────────────────────────────────────────────────── */
+let scene,camera,renderer,controls,composer,bloomPass;
+let animId=null, isActive=false, vizGroup=new THREE.Group();
+let coreOrbMesh,coreOrbParticles,coreOrbTorus,gridMesh,panelGroup;
+let clock=new THREE.Clock(), ampVal=0, atlasState='idle';
+let allHoloMats=[];
+
+const CYAN=0x4FC3F7;
+const CAT_COLORS={
+  skill:0x4FC3F7, memory:0x9B59B6, research:0x27AE60,
+  playbook:0xE67E22, coaching:0xE74C3C, daily:0x3498DB, note:0xECF0F1
+};
+
+/* ── Scene init (lazy) ───────────────────────────────────────────────────── */
+function initScene(){
+  if(renderer) return;
+  const wrap=document.getElementById('hologram-canvas-wrap');
+  const W=wrap.clientWidth||800, H=wrap.clientHeight||500;
+
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x000000);
+  scene.fog=new THREE.FogExp2(0x000508,0.028);
+  scene.add(vizGroup);
+
+  camera=new THREE.PerspectiveCamera(45,W/H,0.1,200);
+  camera.position.set(0,4,9);
+
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setSize(W,H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.toneMapping=THREE.ReinhardToneMapping;
+  renderer.toneMappingExposure=1.3;
+  wrap.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(CYAN,0.07));
+  const pl=new THREE.PointLight(CYAN,1.6,30); pl.position.set(0,6,0); scene.add(pl);
+  const pl2=new THREE.PointLight(0xffffff,0.3,20); pl2.position.set(-4,-2,4); scene.add(pl2);
+
+  controls=new OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true; controls.dampingFactor=0.06;
+  controls.minDistance=2; controls.maxDistance=25;
+
+  composer=new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene,camera));
+  bloomPass=new UnrealBloomPass(new THREE.Vector2(W,H),0.85,0.45,0.28);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
+  buildCoreOrb();
+  buildGrid();
+  buildFloatingPanels();
+
+  window.addEventListener('resize',onResize);
+  startLoop();
+}
+
+/* ── Persistent: core orb ────────────────────────────────────────────────── */
+function buildCoreOrb(){
+  const mat=makeHoloMat(CYAN,0.55);
+  allHoloMats.push(mat);
+  coreOrbMesh=new THREE.Mesh(new THREE.SphereGeometry(0.9,32,32),mat);
+  scene.add(coreOrbMesh);
+
+  // Torus ring
+  const tmat=makeHoloMat(CYAN,0.35); allHoloMats.push(tmat);
+  coreOrbTorus=new THREE.Mesh(new THREE.TorusGeometry(1.4,0.03,8,64),tmat);
+  scene.add(coreOrbTorus);
+
+  // Particle ring
+  const pts=[]; const R=2.2;
+  for(let i=0;i<180;i++){
+    const a=i/180*Math.PI*2, y=Math.sin(i*0.31)*0.4;
+    pts.push(Math.cos(a)*R,y,Math.sin(a)*R);
+  }
+  const bg=new THREE.BufferGeometry();
+  bg.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+  coreOrbParticles=new THREE.Points(bg,
+    new THREE.PointsMaterial({color:CYAN,size:0.04,transparent:true,opacity:0.6}));
+  scene.add(coreOrbParticles);
+}
+
+/* ── Persistent: floor grid ──────────────────────────────────────────────── */
+function buildGrid(){
+  const g=new THREE.GridHelper(30,30,0x0d3040,0x061820);
+  g.position.y=-2.5;
+  g.material.opacity=0.35; g.material.transparent=true;
+  scene.add(g);
+  gridMesh=g;
+}
+
+/* ── Persistent: floating data panels ───────────────────────────────────── */
+function buildFloatingPanels(){
+  panelGroup=new THREE.Group();
+  const labels=['SYS','TIME','NET'];
+  for(let i=0;i<3;i++){
+    const a=i/3*Math.PI*2;
+    const mat=makeHoloMat(CYAN,0.18); allHoloMats.push(mat);
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.55),mat);
+    plane.position.set(Math.cos(a)*3.5,0.5,Math.sin(a)*3.5);
+    plane.lookAt(0,0.5,0);
+    panelGroup.add(plane);
+  }
+  scene.add(panelGroup);
+}
+
+/* ── Animation loop ──────────────────────────────────────────────────────── */
+function startLoop(){
+  if(animId) return;
+  (function loop(){
+    animId=requestAnimationFrame(loop);
+    const t=clock.getElapsedTime();
+
+    // Update shader uniforms
+    allHoloMats.forEach(m=>{ m.uniforms.time.value=t; m.uniforms.amplitude.value=ampVal; });
+    vizGroup.traverse(o=>{
+      if(o.material&&o.material.uniforms&&o.material.uniforms.time){
+        o.material.uniforms.time.value=t;
+        o.material.uniforms.amplitude.value=ampVal;
+      }
+    });
+
+    // Animate core orb
+    if(coreOrbMesh){
+      coreOrbMesh.rotation.y=t*0.3;
+      const pulse=1+Math.sin(t*2.0)*0.04+ampVal*0.15;
+      coreOrbMesh.scale.setScalar(pulse);
+      coreOrbTorus.rotation.x=t*0.4; coreOrbTorus.rotation.z=t*0.15;
+      coreOrbParticles.rotation.y=t*0.12;
+    }
+    panelGroup&&(panelGroup.rotation.y=t*0.06);
+
+    controls.update();
+    composer.render();
+  })();
+}
+
+function pauseLoop(){ if(animId){cancelAnimationFrame(animId);animId=null;} }
+
+function onResize(){
+  if(!renderer) return;
+  const w=document.getElementById('hologram-canvas-wrap');
+  const W=w.clientWidth, H=w.clientHeight;
+  camera.aspect=W/H; camera.updateProjectionMatrix();
+  renderer.setSize(W,H);
+  composer.setSize(W,H);
+}
+
+/* ── Clear current visualization ─────────────────────────────────────────── */
+function clearViz(){
+  vizGroup.traverse(o=>{
+    if(o.geometry) o.geometry.dispose();
+    if(o.material){
+      if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose());
+      else o.material.dispose();
+    }
+  });
+  while(vizGroup.children.length) vizGroup.remove(vizGroup.children[0]);
+}
+
+/* ── Stock bar chart ─────────────────────────────────────────────────────── */
+function buildStockChart(data){
+  clearViz();
+  const bars=data.bars||[];
+  if(!bars.length) return;
+  const maxC=Math.max(...bars.map(b=>b.c));
+  const minC=Math.min(...bars.map(b=>b.c));
+  const range=maxC-minC||1;
+  bars.forEach((b,i)=>{
+    const h=0.5+((b.c-minC)/range)*3.5;
+    const up=b.c>=b.o;
+    const col=up?0x4FC3F7:0xFF4757;
+    const mat=makeHoloMat(col,0.78); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(0.18,h,0.18),mat);
+    mesh.position.set(i*0.22-bars.length*0.11,h/2-2.5,-1);
+    mesh.scale.y=0; // animate in
+    vizGroup.add(mesh);
+    // Stagger entrance
+    const delay=i*30;
+    setTimeout(()=>{
+      const start=performance.now();
+      (function grow(){
+        const p=Math.min(1,(performance.now()-start)/500);
+        mesh.scale.y=p; mesh.position.y=h*p/2-2.5;
+        if(p<1) requestAnimationFrame(grow);
+      })();
+    },delay);
+  });
+  // Ticker label
+  const lmat=makeHoloMat(CYAN,0.9); allHoloMats.push(lmat);
+  document.getElementById('hologram-label').textContent=data.ticker||'';
+}
+
+/* ── Knowledge graph ─────────────────────────────────────────────────────── */
+function buildKnowledgeGraph(data){
+  clearViz();
+  const nodes=data.nodes||[], edges=data.edges||[];
+  const nodeObjs=[];
+  nodes.forEach(n=>{
+    const col=CAT_COLORS[n.category]||0xECF0F1;
+    const mat=makeHoloMat(col,0.7); allHoloMats.push(mat);
+    const r=n.size*0.25+0.1;
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,10,10),mat);
+    // Spread nodes in 3D sphere
+    const phi=Math.acos(1-2*(n.id+0.5)/Math.max(nodes.length,1));
+    const theta=Math.PI*(1+Math.sqrt(5))*n.id;
+    const rad=3.5;
+    mesh.position.set(
+      rad*Math.sin(phi)*Math.cos(theta),
+      rad*Math.cos(phi),
+      rad*Math.sin(phi)*Math.sin(theta)
+    );
+    mesh.userData={label:n.label};
+    vizGroup.add(mesh);
+    nodeObjs.push(mesh);
+  });
+  // Edges
+  edges.slice(0,150).forEach(e=>{
+    const a=nodeObjs[e.s], b=nodeObjs[e.t];
+    if(!a||!b) return;
+    const pts=[a.position,b.position];
+    const geo=new THREE.BufferGeometry().setFromPoints(pts);
+    const line=new THREE.Line(geo,
+      new THREE.LineBasicMaterial({color:CYAN,opacity:0.18,transparent:true}));
+    vizGroup.add(line);
+  });
+  // Slow auto-rotate
+  (function spin(){
+    if(!isActive) return;
+    vizGroup.rotation.y+=0.002;
+    requestAnimationFrame(spin);
+  })();
+}
+
+/* ── Architecture diagram ────────────────────────────────────────────────── */
+function buildArchitecture(data){
+  clearViz();
+  const mods=data.modules||[], conns=data.connections||[];
+  const nodeObjs=[];
+  mods.forEach(m=>{
+    const mat=makeHoloMat(CYAN,0.65); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.25,0.12),mat);
+    mesh.position.set(m.x*0.85,0,m.y*0.85);
+    mesh.userData={label:m.label,id:m.id};
+    vizGroup.add(mesh);
+    nodeObjs[m.id]=mesh;
+  });
+  conns.forEach(([a,b])=>{
+    const na=nodeObjs[a], nb=nodeObjs[b];
+    if(!na||!nb) return;
+    const pts=[na.position.clone(),nb.position.clone()];
+    const geo=new THREE.BufferGeometry().setFromPoints(pts);
+    const line=new THREE.Line(geo,
+      new THREE.LineBasicMaterial({color:CYAN,opacity:0.3,transparent:true}));
+    vizGroup.add(line);
+  });
+  // Animate data packets along connections
+  conns.slice(0,8).forEach(([a,b],i)=>{
+    const na=nodeObjs[a], nb=nodeObjs[b];
+    if(!na||!nb) return;
+    const pkt=new THREE.Mesh(
+      new THREE.SphereGeometry(0.055,6,6),
+      new THREE.MeshBasicMaterial({color:0xffffff}));
+    vizGroup.add(pkt);
+    let t=i*0.3;
+    (function move(){
+      if(!isActive) return;
+      t=(t+0.007)%1;
+      pkt.position.lerpVectors(na.position,nb.position,t);
+      requestAnimationFrame(move);
+    })();
+  });
+}
+
+/* ── 3D Globe ────────────────────────────────────────────────────────────── */
+function buildGlobe(){
+  clearViz();
+  const mat=makeHoloMat(0x2ECC71,0.45); allHoloMats.push(mat);
+  const globe=new THREE.Mesh(new THREE.SphereGeometry(2.2,32,32),mat);
+  vizGroup.add(globe);
+  // Latitude / longitude lines
+  for(let lat=-80;lat<=80;lat+=20){
+    const r=lat/180*Math.PI;
+    const pts=[];
+    for(let i=0;i<=64;i++){
+      const lon=i/64*Math.PI*2;
+      pts.push(new THREE.Vector3(
+        2.21*Math.cos(r)*Math.cos(lon),
+        2.21*Math.sin(r),
+        2.21*Math.cos(r)*Math.sin(lon)));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    vizGroup.add(new THREE.Line(g,
+      new THREE.LineBasicMaterial({color:0x27AE60,opacity:0.25,transparent:true})));
+  }
+  for(let lon=0;lon<360;lon+=30){
+    const r=lon/180*Math.PI;
+    const pts=[];
+    for(let i=0;i<=32;i++){
+      const lat=(i/32-0.5)*Math.PI;
+      pts.push(new THREE.Vector3(
+        2.21*Math.cos(lat)*Math.cos(r),
+        2.21*Math.sin(lat),
+        2.21*Math.cos(lat)*Math.sin(r)));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    vizGroup.add(new THREE.Line(g,
+      new THREE.LineBasicMaterial({color:0x27AE60,opacity:0.18,transparent:true})));
+  }
+  // City dots
+  [[51,0],[40,-74],[35,139],[34,118],[-34,151],[48,2],[55,37]]
+  .forEach(([lat,lon])=>{
+    const phi=(90-lat)/180*Math.PI, theta=(lon+180)/180*Math.PI;
+    const dot=new THREE.Mesh(
+      new THREE.SphereGeometry(0.06,6,6),
+      new THREE.MeshBasicMaterial({color:0x4FC3F7}));
+    dot.position.set(
+      2.28*Math.sin(phi)*Math.cos(theta),
+      2.28*Math.cos(phi),
+      2.28*Math.sin(phi)*Math.sin(theta));
+    vizGroup.add(dot);
+  });
+  (function spin(){
+    if(!isActive) return;
+    globe.rotation.y+=0.004; vizGroup.rotation.y+=0.001;
+    requestAnimationFrame(spin);
+  })();
+}
+
+/* ── Code treemap ────────────────────────────────────────────────────────── */
+function buildTreemap(data){
+  clearViz();
+  const files=data.files||[];
+  const maxL=Math.max(...files.map(f=>f.lines),1);
+  const latest=Math.max(...files.map(f=>f.mtime),1);
+  const cols=Math.ceil(Math.sqrt(files.length));
+  files.forEach((f,i)=>{
+    const h=0.4+((f.lines/maxL)*2.5);
+    const freshness=(f.mtime/latest);
+    const col=freshness>0.98?0xF1C40F:freshness>0.9?0x4FC3F7:0x2C3E50;
+    const mat=makeHoloMat(col,0.7); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(0.45,h,0.45),mat);
+    mesh.position.set((i%cols)*0.55-cols*0.275,h/2-2.5,Math.floor(i/cols)*0.55-2);
+    vizGroup.add(mesh);
+  });
+}
+
+/* ── Quick models ────────────────────────────────────────────────────────── */
+function buildQuick(type){
+  clearViz();
+  if(type==='dna')     buildDNA();
+  else if(type==='solar')  buildSolar();
+  else if(type==='brain')  buildNeuralNet();
+  else if(type==='city')   buildCity();
+  else if(type==='atom')   buildAtom();
+  else if(type==='network')buildNetwork();
+  else buildAtom();
+}
+
+function buildDNA(){
+  const mat=makeHoloMat(CYAN,0.7); allHoloMats.push(mat);
+  const mat2=makeHoloMat(0xE74C3C,0.65); allHoloMats.push(mat2);
+  const pts1=[],pts2=[];
+  for(let i=0;i<120;i++){
+    const t=i/120, a=t*Math.PI*8, h=t*5-2.5;
+    pts1.push(new THREE.Vector3(Math.cos(a)*0.9,h,Math.sin(a)*0.9));
+    pts2.push(new THREE.Vector3(Math.cos(a+Math.PI)*0.9,h,Math.sin(a+Math.PI)*0.9));
+    if(i%8===0){
+      const rung=new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03,0.03,1.8,6),
+        makeHoloMat(0xF1C40F,0.6));
+      rung.position.set(0,h,0);
+      rung.rotation.x=Math.PI/2;
+      rung.rotation.z=a;
+      vizGroup.add(rung);
+    }
+  }
+  const g1=new THREE.BufferGeometry().setFromPoints(pts1);
+  const g2=new THREE.BufferGeometry().setFromPoints(pts2);
+  vizGroup.add(new THREE.Line(g1,new THREE.LineBasicMaterial({color:CYAN,linewidth:2})));
+  vizGroup.add(new THREE.Line(g2,new THREE.LineBasicMaterial({color:0xE74C3C,linewidth:2})));
+  (function spin(){if(!isActive)return; vizGroup.rotation.y+=0.008; requestAnimationFrame(spin);})();
+}
+
+function buildSolar(){
+  // Sun
+  const sunMat=makeHoloMat(0xF39C12,0.85); allHoloMats.push(sunMat);
+  vizGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.6,16,16),sunMat));
+  // Planets
+  const planets=[
+    [0.09,0.8,0xAAAAAA,3.0],
+    [0.13,1.3,0xE8A97E,2.2],
+    [0.14,1.9,CYAN,1.6],
+    [0.10,2.5,0xFF6B6B,1.2],
+    [0.40,3.6,0xD4A57A,0.7],
+  ];
+  planets.forEach(([r,orb,col,sp],i)=>{
+    const mat=makeHoloMat(col,0.75); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,12,12),mat);
+    const pivot=new THREE.Object3D(); pivot.add(mesh);
+    mesh.position.x=orb;
+    // Orbit ring
+    const oring=new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(
+        Array.from({length:65},(_,k)=>{
+          const a=k/64*Math.PI*2;
+          return new THREE.Vector3(orb*Math.cos(a),0,orb*Math.sin(a));
+        })),
+      new THREE.LineBasicMaterial({color:col,opacity:0.18,transparent:true}));
+    vizGroup.add(oring);
+    vizGroup.add(pivot);
+    let angle=i*1.3;
+    (function orbit(){
+      if(!isActive) return;
+      angle+=0.005*sp; pivot.rotation.y=angle;
+      requestAnimationFrame(orbit);
+    })();
+  });
+}
+
+function buildNeuralNet(){
+  const layers=[3,5,5,3];
+  const nodeMap=[];
+  layers.forEach((n,li)=>{
+    const row=[];
+    for(let ni=0;ni<n;ni++){
+      const mat=makeHoloMat(CYAN,0.7); allHoloMats.push(mat);
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.15,10,10),mat);
+      mesh.position.set(li*1.8-2.7,(ni-(n-1)/2)*0.9,0);
+      vizGroup.add(mesh);
+      row.push(mesh);
+    }
+    if(li>0){
+      nodeMap[li-1].forEach(a=>row.forEach(b=>{
+        const geo=new THREE.BufferGeometry().setFromPoints([a.position,b.position]);
+        vizGroup.add(new THREE.Line(geo,
+          new THREE.LineBasicMaterial({color:CYAN,opacity:0.15,transparent:true})));
+      }));
+    }
+    nodeMap.push(row);
+  });
+  // Pulse signal
+  (function pulse(){
+    if(!isActive) return;
+    const t=clock.getElapsedTime();
+    nodeMap.forEach((row,li)=>row.forEach(m=>{
+      const p=Math.sin(t*2+li*0.7)*0.5+0.5;
+      m.material.uniforms.opacity.value=0.4+p*0.5;
+    }));
+    requestAnimationFrame(pulse);
+  })();
+}
+
+function buildCity(){
+  const seed=12345;
+  function rng(i){return((seed*i*1664525+1013904223)&0x7fffffff)/0x7fffffff;}
+  for(let i=0;i<32;i++){
+    const w=rng(i*3)*0.5+0.2, d=rng(i*3+1)*0.5+0.2, h=rng(i*3+2)*2+0.3;
+    const x=(rng(i*7)-0.5)*8, z=(rng(i*11)-0.5)*8;
+    const col=i%4===0?CYAN:i%3===0?0x8E44AD:0x2C3E50;
+    const mat=makeHoloMat(col,0.55); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    mesh.position.set(x,h/2-2.5,z);
+    vizGroup.add(mesh);
+  }
+}
+
+function buildAtom(){
+  // Nucleus
+  const nmat=makeHoloMat(0xE74C3C,0.8); allHoloMats.push(nmat);
+  vizGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.28,12,12),nmat));
+  // Electron shells
+  [1.2,2.0,2.8].forEach((r,si)=>{
+    const axis=new THREE.Vector3(
+      si===0?0:si===1?1:0.7,
+      si===0?1:si===1?0:0.7,
+      si===0?0:si===1?0:0.1).normalize();
+    // Ring
+    const pts=Array.from({length:65},(_,k)=>{
+      const a=k/64*Math.PI*2;
+      return new THREE.Vector3(r*Math.cos(a),r*Math.sin(a),0);
+    });
+    const ring=new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:CYAN,opacity:0.3,transparent:true}));
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),axis);
+    vizGroup.add(ring);
+    // Electron
+    const emat=makeHoloMat(CYAN,0.9); allHoloMats.push(emat);
+    const electron=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,8),emat);
+    vizGroup.add(electron);
+    let angle=si*2.1;
+    const speed=0.8-si*0.15;
+    (function orbit(){
+      if(!isActive) return;
+      angle+=0.02*speed;
+      const v=new THREE.Vector3(r*Math.cos(angle),r*Math.sin(angle),0);
+      v.applyQuaternion(ring.quaternion);
+      electron.position.copy(v);
+      requestAnimationFrame(orbit);
+    })();
+  });
+}
+
+function buildNetwork(){
+  const N=12;
+  const nodeList=[];
+  for(let i=0;i<N;i++){
+    const a=i/N*Math.PI*2, r=1.8+(i%3)*0.8;
+    const mat=makeHoloMat(CYAN,0.75); allHoloMats.push(mat);
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,8),mat);
+    mesh.position.set(r*Math.cos(a),Math.sin(i*0.9)*0.7,r*Math.sin(a));
+    vizGroup.add(mesh);
+    nodeList.push(mesh);
+  }
+  // Edges
+  for(let i=0;i<N;i++){
+    for(let j=i+1;j<N;j++){
+      if(Math.abs(i-j)<=3||(i===0&&j===N-1)){
+        const geo=new THREE.BufferGeometry()
+          .setFromPoints([nodeList[i].position,nodeList[j].position]);
+        vizGroup.add(new THREE.Line(geo,
+          new THREE.LineBasicMaterial({color:CYAN,opacity:0.22,transparent:true})));
+      }
+    }
+  }
+  (function spin(){if(!isActive)return; vizGroup.rotation.y+=0.005; requestAnimationFrame(spin);})();
+}
+
+/* ── Loading spinner ─────────────────────────────────────────────────────── */
+function buildLoading(data){
+  clearViz();
+  document.getElementById('hologram-label').textContent=
+    'Generating: '+(data.label||'');
+  const mat=makeHoloMat(CYAN,0.5); allHoloMats.push(mat);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.06,8,48),mat);
+  vizGroup.add(ring);
+  (function spin(){
+    if(!isActive||vizGroup.children.length>1) return;
+    ring.rotation.z+=0.04; ring.rotation.x+=0.01;
+    requestAnimationFrame(spin);
+  })();
+}
+
+/* ── AI-generated mesh ───────────────────────────────────────────────────── */
+function applyGeneratedMesh(fnCode){
+  clearViz();
+  try{
+    // eslint-disable-next-line no-new-func
+    const fn=new Function('THREE',`${fnCode}; return buildMesh();`);
+    const group=fn(THREE);
+    group.traverse(o=>{
+      if(o.isMesh){
+        const m=makeHoloMat(CYAN,0.7); allHoloMats.push(m);
+        o.material=m;
+      }
+    });
+    vizGroup.add(group);
+    (function spin(){if(!isActive)return; group.rotation.y+=0.006; requestAnimationFrame(spin);})();
+  }catch(e){
+    console.warn('Hologram: mesh eval failed:',e);
+    buildQuick('atom');
+  }
+}
+
+/* ── Crossfade switch ────────────────────────────────────────────────────── */
+function switchViz(buildFn){
+  const wrap=document.getElementById('hologram-canvas-wrap');
+  wrap.style.transition='opacity 200ms';
+  wrap.style.opacity='0';
+  setTimeout(()=>{
+    buildFn();
+    wrap.style.opacity='1';
+  },200);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EXPOSED PUBLIC API — all called by Python via runJavaScript()
+   ══════════════════════════════════════════════════════════════════════════ */
+
+window.showHologram = function(type, data){
+  initScene();
+  isActive=true;
+  document.body.classList.remove('hologram-fullscreen');
+  document.body.classList.add('hologram-active');
+  document.getElementById('hologram-label').textContent='';
+
+  switchViz(()=>{
+    if(type==='stock')        buildStockChart(data);
+    else if(type==='knowledge') buildKnowledgeGraph(data);
+    else if(type==='architecture') buildArchitecture(data);
+    else if(type==='globe')   buildGlobe();
+    else if(type==='treemap') buildTreemap(data);
+    else if(type==='quick')   buildQuick(data.model||'atom');
+    else if(type==='loading') buildLoading(data);
+    else clearViz();   // default — just the core orb and grid
+  });
+  if(!animId) startLoop();
+};
+
+window.hideHologram = function(){
+  isActive=false;
+  document.body.classList.remove('hologram-active','hologram-fullscreen');
+  clearViz();
+  pauseLoop();
+};
+
+window.hologramFullscreen = function(){
+  initScene();
+  isActive=true;
+  document.body.classList.remove('hologram-active');
+  document.body.classList.add('hologram-fullscreen');
+  if(!animId) startLoop();
+  setTimeout(onResize,420);
+};
+
+window.hologramAmplitude = function(v){
+  ampVal=v;
+};
+
+window.hologramState = function(state){
+  atlasState=state;
+  if(coreOrbMesh){
+    const colMap={
+      idle:CYAN, listening:0x00CFFF,
+      thinking:0x8844FF, responding:0x00EEFF
+    };
+    const c=colMap[state]||CYAN;
+    coreOrbMesh.material.uniforms.color.value.setHex(c);
+  }
+};
+
+window.hologramScale = function(f){
+  vizGroup.scale.multiplyScalar(f);
+};
+
+window.hologramWireframe = function(on){
+  vizGroup.traverse(o=>{
+    if(o.isMesh&&o.material) o.material.wireframe=on;
+  });
+};
+
+window.hologramResetView = function(){
+  if(!camera||!controls) return;
+  camera.position.set(0,4,9);
+  controls.target.set(0,0,0);
+  controls.update();
+  vizGroup.scale.set(1,1,1);
+};
+
+window.hologramAutoRotate = function(on){
+  if(controls) controls.autoRotate=on;
+};
+
+window.hologramUpdateData = function(data){
+  if(!isActive) return;
+  switchViz(()=>{
+    if(data.bars)    buildStockChart(data);
+    else if(data.nodes) buildKnowledgeGraph(data);
+    else if(data.files) buildTreemap(data);
+    else if(data.modules) buildArchitecture(data);
+  });
+};
+
+window.hologramBuildMesh = function(fnCode){
+  if(!isActive){initScene(); isActive=true; document.body.classList.add('hologram-active');}
+  switchViz(()=>applyGeneratedMesh(fnCode));
+  if(!animId) startLoop();
+};
+
+window.hologramScreenshot = function(){
+  if(!renderer) return;
+  renderer.render(scene,camera);
+  const url=renderer.domElement.toDataURL('image/png');
+  const a=document.createElement('a');
+  a.href=url; a.download='atlas-hologram.png'; a.click();
+};
+
+window.hologramShowChat = function(){
+  document.body.classList.remove('hologram-active','hologram-fullscreen');
+  setTimeout(()=>document.body.classList.add('hologram-active'),3000);
+};
+
+console.log('[ATLAS] Hologram module loaded — Three.js r163');
 </script>
 </body>
 </html>

@@ -1268,6 +1268,10 @@ class VoiceWorker(QThread):
                         recording = False
                         if elapsed < 0.25:
                             log.debug("Utterance too short (%.2fs), ignoring", elapsed)
+                            # Reset conversation mode — prevents ambient noise loop:
+                            # ping → noise → discard → ping → noise → discard → ...
+                            self._convo_active  = False
+                            self._convo_vad_run = 0
                             self.speaking_done.emit()
                         else:
                             audio = np.concatenate(rec_buf)
