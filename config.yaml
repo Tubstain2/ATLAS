@@ -290,6 +290,15 @@ hologram_fps_target: 60              # target FPS (informational; Three.js uses 
 hologram_auto_dismiss_seconds: 0     # seconds before hologram auto-closes (0 = never)
 hologram_default_state: "orb"        # initial layout: orb | active | fullscreen
 
+# ── Missing keys referenced in code ───────────────────────────────────────────
+coaching_max_active_goals: 5         # max concurrent coaching goals
+coaching_plan_duration_days: 30      # default coaching plan length
+obsidian_tasks_path: "ATLAS/Tasks/tasks.md"  # tasks file path within vault
+response_cache_enabled: true         # cache repeated responses
+response_cache_size: 500             # max cached responses
+smart_model: "llama-3.3-70b-versatile"  # Groq smart model alias
+vault_path: "ATLAS"                  # vault subdirectory alias
+
 # ── Agentic OS ────────────────────────────────────────────────────────────────
 agentic_os_enabled: true
 agent_loop_interval_ms: 500
