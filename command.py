@@ -26,6 +26,7 @@ class CommandCentre:
             "queue":          self._task_queue.pending()[:10],
             "resources":      self._resources.get_status(),
             "recent_actions": self._read_recent_audit(5),
+            "safety":         self._safety.get_safety_status() if self._safety else {},
         }
 
     def _read_recent_audit(self, n: int) -> list[str]:

@@ -7,6 +7,8 @@ import threading
 import time
 from typing import Callable, Optional
 
+from safety import HALT_FLAG
+
 log = logging.getLogger(__name__)
 
 
@@ -32,6 +34,9 @@ class AgentLoop:
 
     def _loop(self) -> None:
         while self._running:
+            if HALT_FLAG.is_set():
+                time.sleep(0.1)
+                continue
             t0 = time.monotonic()
             try:
                 self._tick()

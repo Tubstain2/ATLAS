@@ -60,8 +60,11 @@ class EventMonitor:
             log.warning("EventMonitor: watchdog start failed: %s", exc)
 
     def _poll_loop(self) -> None:
+        from safety import HALT_FLAG, PRIVACY_MODE
         while True:
             time.sleep(30)
+            if HALT_FLAG.is_set() or PRIVACY_MODE.is_set():
+                continue
             try:
                 self._check_battery()
                 now = time.time()
