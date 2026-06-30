@@ -22,6 +22,7 @@ ui:
 
 voice:
   wake_word: "atlas"
+  silence_threshold_min: 0.015  # lower = more sensitive mic detection
   whisper_model: "auto"              # auto = detect chip (M1→base.en, M2/M3/M4→small.en, Intel→tiny.en)
   piper_voice: "en_US-ryan-high"     # primary TTS voice (JARVIS HF URL is dead)
   tts_model: "en_US-ryan-high"       # legacy key; piper_voice takes precedence

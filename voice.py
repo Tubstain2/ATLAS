@@ -1099,6 +1099,8 @@ class VoiceWorker(QThread):
         self._audio_q: queue.Queue[np.ndarray] = queue.Queue(maxsize=300)
         self._response_cb: Optional[Callable[[str], str]] = None
 
+        self._silence_min    = float(vc.get("silence_threshold_min", 0.015))
+
         # Conversation mode
         self._convo_active   = False
         self._convo_ends_at  = 0.0
@@ -1141,7 +1143,7 @@ class VoiceWorker(QThread):
             return self._SILENCE_THRESHOLD
 
         noise     = float(np.percentile(amps, 75))
-        threshold = max(0.04, min(0.25, noise * 2.8))
+        threshold = max(self._silence_min, min(0.25, noise * 2.8))
         log.info("Noise floor: %.3f → silence threshold: %.3f", noise, threshold)
         return threshold
 
