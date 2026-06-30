@@ -140,11 +140,7 @@ class ATLASHologram:
             return self._show_quick("network", "network topology")
 
         # AI-generated model
-        m = re.search(r"build (?:me )?a 3d model of (.+?)$", lc)
-        if m:
-            return self._generate_model(m.group(1).strip())
-
-        m = re.search(r"generate a? ?3d model of (.+?)$", lc)
+        m = re.search(r"(?:build|make|create|generate) (?:me )?a? ?3d model of (.+?)$", lc)
         if m:
             return self._generate_model(m.group(1).strip())
 
