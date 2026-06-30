@@ -565,6 +565,8 @@ class WakeWordEngine:
         self._frame_length = 512
         self._use_fallback = False
         self._energy_run   = 0
+        self._kws_threshold  = 0.10
+        self._energy_thresh  = 0.05
 
         try:
             import sherpa_onnx as _check  # noqa: F401
@@ -601,7 +603,7 @@ class WakeWordEngine:
             num_threads=1,
             max_active_paths=4,
             keywords_score=1.5,
-            keywords_threshold=0.25,
+            keywords_threshold=self._kws_threshold,
             num_trailing_blanks=1,
             provider="cpu",
         )
@@ -700,7 +702,7 @@ class WakeWordEngine:
         return False
 
     def _energy_trigger(self, chunk: np.ndarray) -> bool:
-        if _rms_amplitude(chunk) > self._ENERGY_THRESHOLD:
+        if _rms_amplitude(chunk) > self._energy_thresh:
             self._energy_run += 1
         else:
             self._energy_run = 0
@@ -1100,6 +1102,7 @@ class VoiceWorker(QThread):
         self._response_cb: Optional[Callable[[str], str]] = None
 
         self._silence_min    = float(vc.get("silence_threshold_min", 0.015))
+        self._convo_vad_min  = int(vc.get("convo_speech_frames", 2))
 
         # Conversation mode
         self._convo_active   = False
@@ -1215,7 +1218,7 @@ class VoiceWorker(QThread):
                             self.status_message.emit("VOICE ONLINE")
                         elif amp > silence_threshold:
                             self._convo_vad_run += 1
-                            if self._convo_vad_run >= 4:
+                            if self._convo_vad_run >= self._convo_vad_min:
                                 self._convo_vad_run = 0
                                 log.info("Conversation mode: speech detected → recording")
                                 self.wake_word_detected.emit()
