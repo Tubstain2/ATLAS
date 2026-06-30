@@ -180,13 +180,21 @@ class ATLASMainWindow(QMainWindow):
             self.setCentralWidget(lbl)
             return
 
+        # Logging page — forwards JS console to Python stdout
+        class _LogPage(QWebEnginePage):
+            def javaScriptConsoleMessage(self, level, message, line, source):
+                tag = ["DBG","INF","WRN","ERR"][min(level.value, 3)]
+                log.debug("[JS:%s] %s:%s — %s", tag, source.split("/")[-1], line, message)
+
         self._view = QWebEngineView()
+        self._view.setPage(_LogPage(self._view))
 
         # Settings
         s = self._view.settings()
-        s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled,             True)
+        s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled,               True)
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        s.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,          True)
+        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls,   True)
+        s.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,           True)
 
         # Background
         self._view.setStyleSheet("background: #0A0A0F;")

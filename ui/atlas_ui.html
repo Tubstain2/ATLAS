@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ATLAS</title>
-<!-- Three.js import map — loaded only when hologram activates -->
+<!-- Three.js import map — local vendor bundle (no CDN dependency) -->
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/"
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
   }
 }
 </script>
